@@ -105,6 +105,8 @@ pub fn create(state: &AppState) -> Result<Value> {
     Ok(metadata)
 }
 fn private_dir(path: &Path) -> Result<()> {
+    #[cfg(not(unix))]
+    let _ = path;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
