@@ -14,6 +14,10 @@ use std::{
 use tokio::{process::Command, sync::oneshot, task::JoinHandle};
 
 const SETUP_MODEL: &str = "know-where-openrouter";
+#[cfg(unix)]
+const INTERRUPT_SIGNAL: i32 = libc::SIGINT;
+#[cfg(not(unix))]
+const INTERRUPT_SIGNAL: i32 = 2;
 
 pub fn validate_setup(args: &[String]) -> Result<Option<String>> {
     match args {
@@ -423,8 +427,7 @@ pub async fn run(mut state: AppState, args: &[String]) -> Result<i32> {
         tokio::select! {
             status = child.wait() => break status?,
             signal = shutdown_signal() => {
-                #[cfg(unix)]
-                if !own_group&&signal==libc::SIGINT{
+                if !own_group&&signal==INTERRUPT_SIGNAL{
                     // The foreground terminal already delivered Ctrl-C to the
                     // harness. It can cancel a turn and remain interactive.
                     continue;

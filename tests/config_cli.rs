@@ -2,8 +2,9 @@
 use know_where::types::{Catalog, Pin};
 use know_where::{AppState, Config, Store};
 use serde_json::{Value, json};
+#[cfg(unix)]
+use std::path::Path;
 use std::{
-    path::Path,
     process::{Command, Output},
     sync::{
         Arc,
@@ -67,6 +68,7 @@ fn key(output: Output) -> String {
         .unwrap()
         .to_owned()
 }
+#[cfg(unix)]
 fn catalog(config: &Config) -> Catalog {
     Store::open(&config.data_dir.join("know-where.db"))
         .unwrap()
