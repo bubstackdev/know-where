@@ -52,12 +52,14 @@ Place the extracted `knowwhere` or `knowwhere.exe` in a user-owned directory on 
 ## First session and switching back
 
 ```sh
-knowwhere setup --model owner/model
+knowwhere setup
 knowwhere run claude
 knowwhere run codex
 ```
 
-Setup reads `OPENROUTER_API_KEY` or asks for it with a hidden terminal prompt. The key is encrypted in KnowWhere's data directory. Interactive setup can ask for the model; noninteractive setup needs `--model` and the environment variable. Selecting a model sets all four tiers to it while preserving other catalog rows.
+Setup reads `OPENROUTER_API_KEY` or asks for it with a hidden terminal prompt. The key is encrypted in KnowWhere's data directory. Setup defaults to `openrouter/auto`; `--model openrouter/auto-beta` selects the beta router and `--model owner/model` selects a fixed model. Noninteractive setup needs the environment variable. All setup routes save `openRouter: {"maxPromptPrice": 1, "maxCompletionPrice": 1}` and select the model in all four tiers while preserving other catalog rows. These prices are USD per million tokens, enforced by sending `provider.max_price: {"prompt": 1, "completion": 1}` on every outbound request, including tool continuations. They cap provider token prices, not total session spend. OpenRouter filters out endpoints above either cap; KnowWhere does not retry without the caps. Adjust per-model ceilings in Settings if needed.
+
+After upgrading an existing installation, run `knowwhere setup` again to switch its route to capped Auto. The upgrade alone leaves saved catalog choices intact. The price ceilings live in KnowWhere's per-model configuration, not an OpenRouter dashboard setting. See [OpenRouter's provider routing documentation](https://openrouter.ai/docs/guides/routing/provider-selection#max-price).
 
 Each `run` invocation supplies temporary process settings to the harness and owns its loopback gateway. It does not write Claude/Codex or shell configuration. The harness continues to manage its ordinary session files. Run `claude` or `codex` directly for the usual subscription session afterward; no reset command is needed.
 

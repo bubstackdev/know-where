@@ -22,16 +22,18 @@ From a checkout, use `cargo install --path . --locked`. Native archives have not
 
 ## Start an OpenRouter session
 
-Have the `claude` and/or `codex` CLI installed and on your PATH. Choose an OpenRouter model ID and run:
+Have the `claude` and/or `codex` CLI installed and on your PATH, then run:
 
 ```sh
-knowwhere setup --model owner/model
+knowwhere setup
 knowwhere run claude
 # or:
 knowwhere run codex
 ```
 
-Replace `owner/model` with a model that supports tool calls for coding sessions. Setup reads `OPENROUTER_API_KEY` when present; otherwise it asks for the key without echoing it. Without `--model`, interactive setup also asks for the model. Setup saves the key encrypted and selects that OpenRouter model in all four routing tiers, keeping other model entries available in Settings.
+Setup defaults to `openrouter/auto` and saves a provider price ceiling of **$1 per million prompt tokens and $1 per million completion tokens**. Every outbound request includes `provider.max_price: {"prompt": 1, "completion": 1}`. OpenRouter filters out provider endpoints above either ceiling; this is a token price limit, not a total session budget. If no eligible endpoint remains, the request fails without relaxing the caps. This is a request-scoped API parameter, not an OpenRouter account setting. See [OpenRouter provider routing](https://openrouter.ai/docs/guides/routing/provider-selection#max-price).
+
+Use `knowwhere setup --model openrouter/auto-beta` for the beta router, or `--model owner/model` for a fixed model that supports tool calls. These also receive both $1/M ceilings. Setup reads `OPENROUTER_API_KEY` when present; otherwise it asks for the key without echoing it. It saves the key encrypted and selects the route in all four tiers, keeping other model entries available in Settings. Re-run setup after upgrading an older installation to apply the new defaults; existing catalogs are not silently rewritten. Per-model ceilings can be edited in Settings under OpenRouter.
 
 `run` starts a temporary loopback gateway and supplies connection settings only to the child process. KnowWhere does not edit Claude/Codex configuration files or your shell configuration. The harness can still write its normal session state and history. The gateway stops when the child exits, and the child's exit code is preserved.
 

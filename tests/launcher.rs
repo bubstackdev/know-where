@@ -53,6 +53,10 @@ fn setup_encrypts_key_selects_all_tiers_and_can_be_repeated() {
         catalog.models.len() > 1,
         "setup preserves previous model rows"
     );
+    assert_eq!(
+        models[0].open_router.as_ref().unwrap(),
+        &serde_json::json!({"maxPromptPrice":1,"maxCompletionPrice":1})
+    );
     assert!(models[0].api_key.is_none());
     let bytes = std::fs::read(data.join("knowwhere.db")).unwrap();
     assert!(

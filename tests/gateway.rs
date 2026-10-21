@@ -594,3 +594,78 @@ async fn session_and_chart_totals_saturate_when_recorded_costs_exceed_integer_ra
         );
     }
 }
+
+// Exercise actual CLI setup through both inbound APIs, including successive calls
+// and streaming, so the ceiling cannot disappear between the catalog and the wire.
+#[tokio::test]
+async fn setup_price_cap_is_sent_on_every_openrouter_request() {
+    let u = upstream().await;
+    for (args, model) in [
+        (vec!["setup"], "openrouter/auto"),
+        (
+            vec!["setup", "--model", "openrouter/auto-beta"],
+            "openrouter/auto-beta",
+        ),
+        (vec!["setup", "--model", "vendor/fixed"], "vendor/fixed"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_knowwhere"))
+            .arg("--data-dir")
+            .arg(dir.path())
+            .args(args)
+            .env("OPENROUTER_API_KEY", "fixture-key")
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let state = AppState::open(Config {
+            data_dir: dir.path().into(),
+            openrouter_api_base: u.base.clone(),
+            ..Default::default()
+        })
+        .unwrap();
+        for path in ["/v1/messages", "/v1/responses"] {
+            for stream in [false, true] {
+                for turn in 0..2 {
+                    let body = if path.ends_with("responses") {
+                        json!({"model":"default", "input":format!("Turn {turn}"), "stream":stream})
+                    } else {
+                        let mut body = message();
+                        body["stream"] = json!(stream);
+                        // Client requests cannot remove or raise the saved ceiling.
+                        body["provider"] = json!({"max_price":{"prompt":100,"completion":100}});
+                        body
+                    };
+                    let response = knowwhere::app(state.clone())
+                        .oneshot(request(&state, path, Some(body)))
+                        .await
+                        .unwrap();
+                    assert_eq!(response.status(), StatusCode::OK);
+                    to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+                    let captured = u.fake.calls.lock().unwrap();
+                    let last = captured.last().unwrap();
+                    assert_eq!(last["model"], model);
+                    assert_eq!(
+                        last["provider"],
+                        json!({"max_price":{"prompt":1,"completion":1}})
+                    );
+                    if model.starts_with("openrouter/auto") {
+                        let plugin = if model.ends_with("-beta") {
+                            "auto-beta-router"
+                        } else {
+                            "auto-router"
+                        };
+                        assert_eq!(last["plugins"][0]["id"], plugin);
+                    } else {
+                        assert!(last.get("plugins").is_none());
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(u.fake.calls.lock().unwrap().len(), 24);
+}

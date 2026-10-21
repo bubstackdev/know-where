@@ -50,22 +50,7 @@ fn validate_model(model: &str) -> Result<()> {
     Ok(())
 }
 pub fn setup(state: &AppState, model: Option<String>) -> Result<()> {
-    let model = match model {
-        Some(model) => model,
-        None => {
-            ensure!(
-                io::stdin().is_terminal(),
-                "Noninteractive setup requires --model owner/model"
-            );
-            eprint!("OpenRouter model ID (owner/model): ");
-            io::stderr().flush()?;
-            let mut model = String::new();
-            io::stdin().read_line(&mut model)?;
-            let model = model.trim().to_owned();
-            validate_model(&model)?;
-            model
-        }
-    };
+    let model = model.unwrap_or_else(|| "openrouter/auto".into());
     let key = match std::env::var("OPENROUTER_API_KEY") {
         Ok(key) if !key.trim().is_empty() => key.trim().to_owned(),
         _ if io::stdin().is_terminal() => {
@@ -82,7 +67,8 @@ pub fn setup(state: &AppState, model: Option<String>) -> Result<()> {
     let mut catalog = state.store.catalog()?;
     let selected: Model = serde_json::from_value(json!({
         "id": SETUP_MODEL, "provider":"openrouter", "upstreamModelId":model,
-        "enabled":true, "supportsTools":true
+        "enabled":true, "supportsTools":true,
+        "openRouter":{"maxPromptPrice":1,"maxCompletionPrice":1}
     }))?;
     if let Some(existing) = catalog.models.iter_mut().find(|m| m.id == SETUP_MODEL) {
         ensure!(
@@ -112,7 +98,7 @@ pub fn setup(state: &AppState, model: Option<String>) -> Result<()> {
         .save_catalog_with_secret(&catalog, "openrouter", &key)?;
     state.store.clear_cooldowns("openrouter")?;
     println!(
-        "OpenRouter configured: {model}\nSelected for all four tiers; other model rows retained.\nRun knowwhere run claude or knowwhere run codex.\nThe model/key have been saved locally; no paid request was made."
+        "OpenRouter configured: {model}\nProvider price ceiling: $1 per million prompt tokens and $1 per million completion tokens (sent on every request).\nSelected for all four tiers; other model rows retained.\nRun knowwhere run claude or knowwhere run codex.\nThe model/key have been saved locally; no paid request was made."
     );
     Ok(())
 }
