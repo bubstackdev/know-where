@@ -3,7 +3,7 @@
 
 Build both programs first, then run:
   python3 tests/differential.py --dotnet /path/to/dotnet \
-    --reference-dll /path/to/SimpleRouter.dll --rust-bin target/debug/know-where
+    --reference-dll /path/to/SimpleRouter.dll --rust-bin target/debug/knowwhere
 
 Both gateways get fresh temporary databases and the same seed. Every upstream URL
 is an in-process loopback fake; this script never uses real provider credentials.
@@ -396,7 +396,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dotnet", default=shutil.which("dotnet"))
     parser.add_argument("--reference-dll", type=Path, required=True)
-    parser.add_argument("--rust-bin", type=Path, default=Path("target/debug/know-where"))
+    parser.add_argument("--rust-bin", type=Path, default=Path("target/debug/knowwhere"))
     parser.add_argument("--keep", action="store_true", help="Keep temporary databases and logs")
     args = parser.parse_args()
     if not args.dotnet:
@@ -404,7 +404,7 @@ def main():
     for path in [args.reference_dll, args.rust_bin]:
         if not path.is_file():
             parser.error(f"Executable/assembly does not exist: {path}")
-    directory = Path(tempfile.mkdtemp(prefix="know-where-differential-"))
+    directory = Path(tempfile.mkdtemp(prefix="knowwhere-differential-"))
     environment = {k: v for k, v in os.environ.items() if not k.startswith(("SimpleRouter__", "KnowWhere__", "KNOW_WHERE__", "ASPNETCORE_"))}
     environment.update({"DOTNET_NOLOGO": "1", "DOTNET_CLI_HOME": str(directory / "dotnet-home"), "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1", "RUST_LOG": "warn"})
     upstream = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeUpstream)

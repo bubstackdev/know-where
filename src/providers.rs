@@ -669,7 +669,7 @@ mod tests {
                     for name in [
                         "x-api-key",
                         "x-weave-router-key",
-                        "x-know-where-key",
+                        "x-knowwhere-key",
                         "proxy-authorization",
                         "connection",
                         "keep-alive",
@@ -727,7 +727,7 @@ mod tests {
             ("authorization", "Bearer gateway-token"),
             ("x-api-key", "gateway-token"),
             ("x-weave-router-key", "gateway-token"),
-            ("x-know-where-key", "gateway-token"),
+            ("x-knowwhere-key", "gateway-token"),
             ("proxy-authorization", "proxy-secret"),
             ("connection", "close"),
             ("keep-alive", "timeout=1"),

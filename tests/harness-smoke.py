@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise installed Claude/Codex tools through know-where and a fake OpenRouter.
+"""Exercise installed Claude/Codex tools through knowwhere and a fake OpenRouter.
 
 No account is needed. Harness homes, configuration, credentials, project files,
 and router state are temporary. External HTTP(S) is routed to a closed loopback
@@ -7,7 +7,7 @@ proxy; the only inference endpoint is the local fake server.
 
 Run after `cargo build`:
   python3 tests/harness-smoke.py --require-installed
-  python3 tests/harness-smoke.py --harness codex --binary target/debug/know-where
+  python3 tests/harness-smoke.py --harness codex --binary target/debug/knowwhere
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ import threading
 import time
 import uuid
 
-MODEL = "openai/know-where-harness-smoke"
+MODEL = "openai/knowwhere-harness-smoke"
 FINAL = "KNOW_WHERE_HARNESS_OK"
 
 
@@ -211,7 +211,7 @@ class FakeOpenRouter:
 
 
 def exercise(binary: Path, harness: str, executable: str, *, claude_normal: bool = False):
-    with tempfile.TemporaryDirectory(prefix=f"know-where-{harness}-smoke-") as temporary:
+    with tempfile.TemporaryDirectory(prefix=f"knowwhere-{harness}-smoke-") as temporary:
         home = Path(temporary)
         work = home / "work"
         work.mkdir()
@@ -269,14 +269,14 @@ def exercise(binary: Path, harness: str, executable: str, *, claude_normal: bool
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", type=Path, default=Path(__file__).resolve().parents[1] / "target" / "debug" / "know-where")
+    parser.add_argument("--binary", type=Path, default=Path(__file__).resolve().parents[1] / "target" / "debug" / "knowwhere")
     parser.add_argument("--harness", choices=("all", "claude", "codex"), default="all")
     parser.add_argument("--require-installed", action="store_true", help="Fail instead of skipping an unavailable CLI")
     parser.add_argument("--claude-normal", action="store_true", help="Linux-only: load the isolated saved Claude settings normally instead of using --bare")
     args = parser.parse_args()
     if args.claude_normal and not sys.platform.startswith("linux"):
         parser.error("--claude-normal is restricted to Linux; default --bare avoids reading a macOS keychain")
-    assert args.binary.is_file(), "Build know-where first with cargo build"
+    assert args.binary.is_file(), "Build knowwhere first with cargo build"
     for harness in (("claude", "codex") if args.harness == "all" else (args.harness,)):
         executable = shutil.which(harness)
         if not executable:

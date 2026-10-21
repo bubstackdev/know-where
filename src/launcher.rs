@@ -1,6 +1,6 @@
 //! Session-scoped harness integration. Saved harness configuration is never edited.
 use anyhow::{Context, Result, bail, ensure};
-use know_where::{
+use knowwhere::{
     AppState,
     types::{Model, TIERS},
 };
@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::{process::Command, sync::oneshot, task::JoinHandle};
 
-const SETUP_MODEL: &str = "know-where-openrouter";
+const SETUP_MODEL: &str = "knowwhere-openrouter";
 #[cfg(unix)]
 const INTERRUPT_SIGNAL: i32 = libc::SIGINT;
 #[cfg(not(unix))]
@@ -31,7 +31,7 @@ pub fn validate_setup(args: &[String]) -> Result<Option<String>> {
             validate_model(model)?;
             Ok(Some(model.to_owned()))
         }
-        _ => bail!("Usage: know-where [global options] setup [--model owner/model]"),
+        _ => bail!("Usage: knowwhere [global options] setup [--model owner/model]"),
     }
 }
 fn validate_model(model: &str) -> Result<()> {
@@ -112,7 +112,7 @@ pub fn setup(state: &AppState, model: Option<String>) -> Result<()> {
         .save_catalog_with_secret(&catalog, "openrouter", &key)?;
     state.store.clear_cooldowns("openrouter")?;
     println!(
-        "OpenRouter configured: {model}\nSelected for all four tiers; other model rows retained.\nRun know-where run claude or know-where run codex.\nThe model/key have been saved locally; no paid request was made."
+        "OpenRouter configured: {model}\nSelected for all four tiers; other model rows retained.\nRun knowwhere run claude or knowwhere run codex.\nThe model/key have been saved locally; no paid request was made."
     );
     Ok(())
 }
@@ -120,7 +120,7 @@ pub fn setup(state: &AppState, model: Option<String>) -> Result<()> {
 pub fn validate_run(args: &[String]) -> Result<()> {
     ensure!(
         matches!(args.first().map(String::as_str), Some("claude" | "codex")),
-        "Usage: know-where [global options] run claude|codex [--] HARNESS_ARGS"
+        "Usage: knowwhere [global options] run claude|codex [--] HARNESS_ARGS"
     );
     let forwarded = args[1..]
         .strip_prefix(&["--".to_owned()])
@@ -233,7 +233,7 @@ fn validate_codex_config(value: &str) -> Result<()> {
             key.as_str(),
             "model_provider" | "model_providers" | "openai_base_url"
         )),
-        "The launcher manages Codex provider settings; change the Know-Where catalog instead"
+        "The launcher manages Codex provider settings; change the KnowWhere catalog instead"
     );
     Ok(())
 }
@@ -299,7 +299,7 @@ fn command(harness: &str, args: &[String], base: &str, key: &str) -> Result<Harn
         });
         merge_settings(&mut settings, json!({"env":managed}));
         let mut file = tempfile::Builder::new()
-            .prefix("know-where-claude-")
+            .prefix("knowwhere-claude-")
             .suffix(".json")
             .tempfile()
             .context("Create private session settings")?;
@@ -330,7 +330,7 @@ fn command(harness: &str, args: &[String], base: &str, key: &str) -> Result<Harn
             .env_remove("CLAUDE_CODE_USE_FOUNDRY");
     } else {
         let provider = format!(
-            "model_providers.know-where={{name=\"Know-Where\",base_url=\"{base}/v1\",env_key=\"KNOW_WHERE_GATEWAY_KEY\",wire_api=\"responses\",requires_openai_auth=false,supports_websockets=false,capabilities={{remote_compaction=\"unsupported\"}}}}"
+            "model_providers.knowwhere={{name=\"KnowWhere\",base_url=\"{base}/v1\",env_key=\"KNOW_WHERE_GATEWAY_KEY\",wire_api=\"responses\",requires_openai_auth=false,supports_websockets=false,capabilities={{remote_compaction=\"unsupported\"}}}}"
         );
         command
             .env("KNOW_WHERE_GATEWAY_KEY", key)
@@ -338,9 +338,9 @@ fn command(harness: &str, args: &[String], base: &str, key: &str) -> Result<Harn
             .arg("--no-daemon")
             .args([
                 "-c",
-                "model_provider=\"know-where\"",
+                "model_provider=\"knowwhere\"",
                 "-c",
-                "model=\"know-where\"",
+                "model=\"knowwhere\"",
                 "-c",
                 "web_search=\"disabled\"",
                 "-c",
@@ -379,7 +379,7 @@ pub async fn run(mut state: AppState, args: &[String]) -> Result<i32> {
     }
     ensure!(
         ready,
-        "No configured routed provider; run know-where setup --model owner/model (or connect a subscription in Settings)"
+        "No configured routed provider; run knowwhere setup --model owner/model (or connect a subscription in Settings)"
     );
     // Bind directly: no saved listener settings, certificates, or remote server
     // processes are changed or reused by a session launcher.
@@ -390,8 +390,8 @@ pub async fn run(mut state: AppState, args: &[String]) -> Result<i32> {
     *state.runtime.listeners.write().await =
         Some(json!({"address":"127.0.0.1","port":address.port(),"httpsPort":null}));
     let key = state.store.gateway_key()?;
-    know_where::refresh_health(&state).await;
-    let app = know_where::app(state);
+    knowwhere::refresh_health(&state).await;
+    let app = knowwhere::app(state);
     let (stop, stopped) = oneshot::channel();
     let task = tokio::spawn(async move {
         axum::serve(
@@ -408,7 +408,7 @@ pub async fn run(mut state: AppState, args: &[String]) -> Result<i32> {
         task,
     };
     let base = format!("http://{address}");
-    eprintln!("Know-Where → {harness}; gateway {base} (session only)");
+    eprintln!("KnowWhere → {harness}; gateway {base} (session only)");
     let mut harness_command = command(harness, &args[1..], &base, &key)?;
     let cmd = &mut harness_command.command;
     // Noninteractive processes can have an independent group for reliable tool
@@ -612,7 +612,7 @@ mod tests {
             "model_provider=other",
             "model_provider\t = \"other\"",
             "\"model_provider\"=\"other\"",
-            "'model_providers'.'know-where'.base_url=\"https://elsewhere.invalid\"",
+            "'model_providers'.'knowwhere'.base_url=\"https://elsewhere.invalid\"",
             "\"\\u006dodel_provider\"=\"other\"",
             "openai_base_url = \"https://elsewhere.invalid\"",
         ] {

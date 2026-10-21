@@ -47,7 +47,7 @@ pub struct AppState {
 }
 impl AppState {
     pub fn open(config: Config) -> anyhow::Result<Self> {
-        let store = Store::open(&config.data_dir.join("know-where.db"))?;
+        let store = Store::open(&config.data_dir.join("knowwhere.db"))?;
         let needs_seed = store.catalog().map_or(true, |catalog| {
             catalog.models.is_empty() || catalog.prices.is_empty()
         });

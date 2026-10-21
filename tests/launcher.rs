@@ -1,9 +1,9 @@
 //! Reversibility and failure cleanup at the executable boundary; fixture keys only.
-use know_where::{Store, types::TIERS};
+use knowwhere::{Store, types::TIERS};
 use std::{path::Path, process::Command};
 
 fn command(data: &Path) -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_know-where"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_knowwhere"));
     cmd.env_remove("OPENROUTER_API_KEY")
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("ANTHROPIC_AUTH_TOKEN")
@@ -33,19 +33,19 @@ fn setup_encrypts_key_selects_all_tiers_and_can_be_repeated() {
     let data = temp.path().join("data");
     setup(&data, "vendor/first");
     setup(&data, "vendor/second");
-    let store = Store::open(&data.join("know-where.db")).unwrap();
+    let store = Store::open(&data.join("knowwhere.db")).unwrap();
     assert_eq!(
         store.get_secret("openrouter").unwrap().as_deref(),
         Some("fixture-upstream-key")
     );
     let catalog = store.catalog().unwrap();
     for tier in TIERS {
-        assert_eq!(catalog.tiers[tier], ["know-where-openrouter"]);
+        assert_eq!(catalog.tiers[tier], ["knowwhere-openrouter"]);
     }
     let models: Vec<_> = catalog
         .models
         .iter()
-        .filter(|m| m.id == "know-where-openrouter")
+        .filter(|m| m.id == "knowwhere-openrouter")
         .collect();
     assert_eq!(models.len(), 1);
     assert_eq!(models[0].upstream_model_id, "vendor/second");
@@ -54,7 +54,7 @@ fn setup_encrypts_key_selects_all_tiers_and_can_be_repeated() {
         "setup preserves previous model rows"
     );
     assert!(models[0].api_key.is_none());
-    let bytes = std::fs::read(data.join("know-where.db")).unwrap();
+    let bytes = std::fs::read(data.join("knowwhere.db")).unwrap();
     assert!(
         !bytes
             .windows(b"fixture-upstream-key".len())
@@ -67,12 +67,12 @@ fn setup_does_not_replace_a_reserved_id_owned_by_another_provider() {
     let temp = tempfile::tempdir().unwrap();
     let data = temp.path().join("data");
     setup(&data, "vendor/original");
-    let store = Store::open(&data.join("know-where.db")).unwrap();
+    let store = Store::open(&data.join("knowwhere.db")).unwrap();
     let mut catalog = store.catalog().unwrap();
     let model = catalog
         .models
         .iter_mut()
-        .find(|m| m.id == "know-where-openrouter")
+        .find(|m| m.id == "knowwhere-openrouter")
         .unwrap();
     model.provider = "local".into();
     model.base_url = Some("http://127.0.0.1:9/v1".into());
@@ -123,7 +123,7 @@ fn unconfigured_launcher_explains_setup_instead_of_starting_a_harness() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("run know-where setup"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("run knowwhere setup"));
 }
 
 #[cfg(unix)]

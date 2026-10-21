@@ -52,7 +52,7 @@ pub fn create(state: &AppState) -> Result<Value> {
     sans.extend(ips.iter().map(ToString::to_string));
     let mut ca = CertificateParams::default();
     ca.distinguished_name
-        .push(DnType::CommonName, "know-where CA");
+        .push(DnType::CommonName, "knowwhere CA");
     ca.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
     ca.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
     let start = time::OffsetDateTime::now_utc() - time::Duration::minutes(5);
@@ -76,7 +76,7 @@ pub fn create(state: &AppState) -> Result<Value> {
     let ca = ca.self_signed(&ca_key)?;
     let mut leaf = CertificateParams::new(sans.clone())?;
     leaf.distinguished_name
-        .push(DnType::CommonName, "know-where");
+        .push(DnType::CommonName, "knowwhere");
     leaf.is_ca = IsCa::ExplicitNoCa;
     leaf.not_before = start;
     leaf.not_after = end;
@@ -170,7 +170,7 @@ pub async fn load(state: &AppState) -> Result<Option<axum_server::tls_rustls::Ru
             .is_some_and(|at| at < now() + 30 * 86400)
         {
             tracing::warn!(
-                "TLS certificate expires soon or has expired; replace the supplied certificate or run know-where cert create for a generated one"
+                "TLS certificate expires soon or has expired; replace the supplied certificate or run knowwhere cert create for a generated one"
             )
         }
         let (names, ips) = identity();
@@ -249,7 +249,7 @@ mod tests {
         let meta = create(&s).unwrap();
         assert_eq!(meta["fingerprint"].as_str().unwrap().len(), 64);
         assert!(load(&s).await.unwrap().is_some());
-        let stored = std::fs::read(dir.path().join("know-where.db")).unwrap();
+        let stored = std::fs::read(dir.path().join("knowwhere.db")).unwrap();
         assert!(!stored.windows(17).any(|w| w == b"BEGIN PRIVATE KEY"));
         assert!(!dir.path().join("certs/router.key").exists());
     }

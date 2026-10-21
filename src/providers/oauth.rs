@@ -79,7 +79,7 @@ pub async fn finish_claude(state: &AppState, login: &PkceLogin, code: &str) -> R
     let response = state
         .client
         .post(&c.claude_token_url)
-        .header("User-Agent", "know-where/0.1")
+        .header("User-Agent", "knowwhere/0.1")
         .json(&body)
         .timeout(std::time::Duration::from_secs(30))
         .send()
@@ -96,7 +96,7 @@ pub async fn start_codex(state: &AppState) -> Result<DeviceCode> {
             "{}/api/accounts/deviceauth/usercode",
             c.codex_issuer.trim_end_matches('/')
         ))
-        .header("User-Agent", "know-where/0.1")
+        .header("User-Agent", "knowwhere/0.1")
         .json(&json!({"client_id":c.codex_client_id}))
         .timeout(std::time::Duration::from_secs(30))
         .send()
@@ -246,7 +246,7 @@ async fn access_inner(
     let secret = state
         .store
         .get_secret(provider)?
-        .context(format!("Run know-where login {provider} first"))?;
+        .context(format!("Run knowwhere login {provider} first"))?;
     let token: Tokens =
         serde_json::from_str(&secret).context("Stored credentials are malformed")?;
     if !force && rejected != Some(token.access_token.as_str()) && token.expires_at > now() + 300 {
@@ -265,7 +265,7 @@ async fn access_inner(
 async fn refresh_tokens(state: &AppState, provider: &str, token: Tokens) -> Result<Tokens> {
     let c = &state.config;
     let response = if provider == "claude" {
-        state.client.post(&c.claude_token_url).header("User-Agent","know-where/0.1").json(&json!({"grant_type":"refresh_token","refresh_token":token.refresh_token,"client_id":c.claude_client_id})).timeout(std::time::Duration::from_secs(30)).send().await?
+        state.client.post(&c.claude_token_url).header("User-Agent","knowwhere/0.1").json(&json!({"grant_type":"refresh_token","refresh_token":token.refresh_token,"client_id":c.claude_client_id})).timeout(std::time::Duration::from_secs(30)).send().await?
     } else {
         state
             .client

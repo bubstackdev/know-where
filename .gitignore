@@ -6,6 +6,7 @@ seed.local.json
 *.db-shm
 *.db-wal
 know-where.key
+knowwhere.key
 .DS_Store
 
 __pycache__/

@@ -821,7 +821,7 @@ async fn exhausted(
             if p == "openrouter" {
                 "set the OpenRouter API key in /ui/settings".into()
             } else {
-                format!("know-where login {p}")
+                format!("knowwhere login {p}")
             }
         })
         .collect::<Vec<String>>();
@@ -1150,8 +1150,8 @@ fn tap_response(
         .get::<std::sync::Arc<std::sync::Mutex<providers::StreamDiagnostics>>>()
         .cloned();
     for (key, target) in [
-        ("x-know-where-resolved-model", &mut usage.resolved_model_id),
-        ("x-know-where-generation-id", &mut usage.generation_id),
+        ("x-knowwhere-resolved-model", &mut usage.resolved_model_id),
+        ("x-knowwhere-generation-id", &mut usage.generation_id),
     ] {
         *target = parts
             .headers
@@ -1160,7 +1160,7 @@ fn tap_response(
     }
     let reported_cost = parts
         .headers
-        .remove("x-know-where-reported-cost")
+        .remove("x-knowwhere-reported-cost")
         .and_then(|v| v.to_str().ok().and_then(|v| v.parse::<f64>().ok()))
         .filter(|v| v.is_finite() && *v >= 0.);
     let stream = parts

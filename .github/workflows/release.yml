@@ -73,4 +73,4 @@ jobs:
         working-directory: dist
         run: sha256sum --check SHA256SUMS
       - name: Create reviewable draft release
-        run: gh release create "$RELEASE_TAG" dist/*.tar.gz dist/*.zip dist/*.sha256 dist/SHA256SUMS --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "know-where $RELEASE_TAG" --generate-notes
+        run: gh release create "$RELEASE_TAG" dist/*.tar.gz dist/*.zip dist/*.sha256 dist/SHA256SUMS --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "KnowWhere $RELEASE_TAG" --generate-notes

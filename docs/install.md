@@ -1,16 +1,16 @@
 # Installation and release distribution
 
-Know-Where is one native executable with its dashboard and initial catalog embedded. End users do not need .NET, Node or Python to run it. Launching a Claude Code or Codex session requires the corresponding harness installed separately and available on PATH.
+KnowWhere is one native executable with its dashboard and initial catalog embedded. End users do not need .NET, Node or Python to run it. Launching a Claude Code or Codex session requires the corresponding harness installed separately and available on PATH.
 
-Source: [bubstackdev/know-where](https://github.com/bubstackdev/know-where). Download archives only from [published releases](https://github.com/bubstackdev/know-where/releases); draft releases become downloadable to users when a maintainer publishes them.
+Source: [bubstackdev/knowwhere](https://github.com/bubstackdev/knowwhere). Native archives have not been published yet; source installation is available. Future archives will appear in [GitHub releases](https://github.com/bubstackdev/knowwhere/releases) after a maintainer publishes the release draft.
 
 ## Install from Git
 
 With current stable Rust and a native C/C++ build toolchain:
 
 ```sh
-cargo install --git https://github.com/bubstackdev/know-where.git --tag "<existing release tag>" --locked know-where
-know-where --version
+cargo install --git https://github.com/bubstackdev/knowwhere.git --tag "<existing release tag>" --locked knowwhere
+knowwhere --version
 ```
 
 Choose a tag shown on the releases page. Until a release tag exists, omit `--tag` to install the current default branch. Cargo installs into its normal binary directory, usually `~/.cargo/bin`. Make sure that directory is on PATH. `--locked` uses the committed dependency versions. To update, choose a newer existing tag and repeat the install command with `--force`.
@@ -33,42 +33,42 @@ Linux archives are built on Ubuntu 22.04 and dynamically link the platform C run
 Download the archive and its adjacent `.sha256` file from the same published release. In the download directory on macOS/Linux:
 
 ```sh
-shasum -a 256 -c know-where-VERSION-TARGET.tar.gz.sha256
-tar -xzf know-where-VERSION-TARGET.tar.gz
+shasum -a 256 -c knowwhere-VERSION-TARGET.tar.gz.sha256
+tar -xzf knowwhere-VERSION-TARGET.tar.gz
 ```
 
 Use the actual archive filename. Windows archives are ZIP files; verify with PowerShell:
 
 ```powershell
-$archive = 'know-where-VERSION-x86_64-pc-windows-msvc.zip'
+$archive = 'knowwhere-VERSION-x86_64-pc-windows-msvc.zip'
 $expected = (Get-Content "$archive.sha256").Split()[0]
 $actual = (Get-FileHash $archive -Algorithm SHA256).Hash
 if ($actual -ne $expected) { throw 'Checksum mismatch' }
 Expand-Archive $archive
 ```
 
-Place the extracted `know-where` or `know-where.exe` in a user-owned directory on PATH, then run `know-where --version`. Checksums detect corrupted or mismatched downloads; these archives are not code-signed or notarized.
+Place the extracted `knowwhere` or `knowwhere.exe` in a user-owned directory on PATH, then run `knowwhere --version`. Checksums detect corrupted or mismatched downloads; these archives are not code-signed or notarized.
 
 ## First session and switching back
 
 ```sh
-know-where setup --model owner/model
-know-where run claude
-know-where run codex
+knowwhere setup --model owner/model
+knowwhere run claude
+knowwhere run codex
 ```
 
-Setup reads `OPENROUTER_API_KEY` or asks for it with a hidden terminal prompt. The key is encrypted in Know-Where's data directory. Interactive setup can ask for the model; noninteractive setup needs `--model` and the environment variable. Selecting a model sets all four tiers to it while preserving other catalog rows.
+Setup reads `OPENROUTER_API_KEY` or asks for it with a hidden terminal prompt. The key is encrypted in KnowWhere's data directory. Interactive setup can ask for the model; noninteractive setup needs `--model` and the environment variable. Selecting a model sets all four tiers to it while preserving other catalog rows.
 
 Each `run` invocation supplies temporary process settings to the harness and owns its loopback gateway. It does not write Claude/Codex or shell configuration. The harness continues to manage its ordinary session files. Run `claude` or `codex` directly for the usual subscription session afterward; no reset command is needed.
 
 Global configuration flags go before the command, for example:
 
 ```sh
-know-where --data-dir /path/to/separate-data setup --model owner/model
-know-where --data-dir /path/to/separate-data run claude
+knowwhere --data-dir /path/to/separate-data setup --model owner/model
+knowwhere --data-dir /path/to/separate-data run claude
 ```
 
-To uninstall a Cargo installation, use `cargo uninstall know-where`. For an archive installation, remove the executable you placed on PATH. Uninstalling the executable keeps the data directory and saved credentials. To discard those too, delete the selected Know-Where data directory separately after backing up anything you want to retain.
+To uninstall a Cargo installation, use `cargo uninstall knowwhere`. For an archive installation, remove the executable you placed on PATH. Uninstalling the executable keeps the data directory and saved credentials. To discard those too, delete the selected KnowWhere data directory separately after backing up anything you want to retain.
 
 ## Maintainer verification and releases
 

@@ -24,7 +24,7 @@ def verify(archive, checksum, stem, executable, version):
         actual = hashlib.file_digest(source, "sha256").hexdigest()
     if actual != expected:
         raise RuntimeError("Archive SHA-256 does not match its checksum")
-    with tempfile.TemporaryDirectory(prefix="know-where-package-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="knowwhere-package-") as temporary:
         directory = Path(temporary)
         if archive.suffix == ".zip":
             with zipfile.ZipFile(archive) as packed:
@@ -35,7 +35,7 @@ def verify(archive, checksum, stem, executable, version):
         binary = directory / stem / executable
         binary.chmod(0o755)
         actual = subprocess.check_output([str(binary), "--version"], text=True).strip()
-        if actual != f"know-where {version}":
+        if actual != f"knowwhere {version}":
             raise RuntimeError(f"Extracted binary has unexpected version: {actual}")
         help_text = subprocess.check_output([str(binary), "--help"], text=True)
         if "setup" not in help_text or "run" not in help_text:
@@ -60,7 +60,7 @@ def main():
     target = args.target or host_target()
     if not target or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for c in target):
         parser.error("Invalid Rust target triple")
-    executable = "know-where.exe" if "windows" in target else "know-where"
+    executable = "knowwhere.exe" if "windows" in target else "knowwhere"
     if not args.skip_build and args.binary is None:
         command = ["cargo", "build", "--locked", "--release"]
         if args.target:
@@ -70,10 +70,10 @@ def main():
     if not binary.is_file():
         parser.error(f"Binary was not found: {binary}")
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"know-where-{version}-{target}"
+    stem = f"knowwhere-{version}-{target}"
     extension = ".zip" if "windows" in target else ".tar.gz"
     archive = args.output_dir / (stem + extension)
-    with tempfile.TemporaryDirectory(prefix="know-where-stage-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="knowwhere-stage-") as temporary:
         stage = Path(temporary) / stem
         stage.mkdir()
         shutil.copy2(binary, stage / executable)

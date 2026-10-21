@@ -543,7 +543,7 @@ async fn mcp(State(state): State<AppState>, req: Request) -> Response {
                 };
             rpc_result(
                 id,
-                json!({"protocolVersion":version,"capabilities":{"logging":{},"tools":{"listChanged":false}},"serverInfo":{"name":"know-where","version":env!("CARGO_PKG_VERSION")}}),
+                json!({"protocolVersion":version,"capabilities":{"logging":{},"tools":{"listChanged":false}},"serverInfo":{"name":"knowwhere","version":env!("CARGO_PKG_VERSION")}}),
             )
         }
         "ping" => rpc_result(id, json!({})),

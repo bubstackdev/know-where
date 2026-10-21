@@ -59,7 +59,7 @@ class Upstream(FakeUpstream):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dotnet", default="dotnet")
-    parser.add_argument("--rust-bin", type=Path, default=ROOT / "target/debug/know-where")
+    parser.add_argument("--rust-bin", type=Path, default=ROOT / "target/debug/knowwhere")
     args = parser.parse_args()
     binary = args.rust_bin.resolve()
     if not binary.is_file():
@@ -72,7 +72,7 @@ def main():
     thread = threading.Thread(target=upstream.serve_forever, daemon=True)
     thread.start()
     try:
-        with tempfile.TemporaryDirectory(prefix="know-where-sdk-") as name:
+        with tempfile.TemporaryDirectory(prefix="knowwhere-sdk-") as name:
             directory = Path(name)
             url = f"http://127.0.0.1:{upstream.server_port}"
             seed = directory / "seed.json"

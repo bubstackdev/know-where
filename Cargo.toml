@@ -1,11 +1,11 @@
 [package]
-name = "know-where"
+name = "knowwhere"
 version = "0.1.0"
 edition = "2024"
 description = "A single-user model gateway with persistent tier routing"
 publish = false
 license = "MIT"
-repository = "https://github.com/bubstackdev/know-where"
+repository = "https://github.com/bubstackdev/knowwhere"
 
 [dependencies]
 anyhow = "1"

@@ -4,7 +4,7 @@ use axum::{
     extract::ConnectInfo,
     http::{Request, StatusCode},
 };
-use know_where::{AppState, Config, tls};
+use knowwhere::{AppState, Config, tls};
 use serde_json::Value;
 use std::{
     io::{BufRead, Write},
@@ -45,8 +45,8 @@ async fn serve(state: AppState) -> Server {
         axum_server::from_tcp_rustls(listener, config)
             .handle(h)
             .serve(
-                know_where::app(state)
-                    .layer(axum::Extension(know_where::Https))
+                knowwhere::app(state)
+                    .layer(axum::Extension(knowwhere::Https))
                     .into_make_service_with_connect_info::<SocketAddr>(),
             )
             .await
@@ -165,7 +165,7 @@ async fn supplied_combined_pem_overrides_the_generated_identity() {
         active["names"],
         serde_json::json!(["localhost", "127.0.0.1"])
     );
-    assert!(active["expiresAt"].as_i64().unwrap() > know_where::types::now());
+    assert!(active["expiresAt"].as_i64().unwrap() > knowwhere::types::now());
     let key = s.store.gateway_key().unwrap();
     let server = serve(s).await;
     let c = client(&supplied, "localhost", server.address);
@@ -287,7 +287,7 @@ fn exported_ca_has_constrained_signing_purpose_and_private_bundle_matches_only_l
         ])
         .contains(": OK")
     );
-    let remaining = metadata["expiresAt"].as_i64().unwrap() - know_where::types::now();
+    let remaining = metadata["expiresAt"].as_i64().unwrap() - knowwhere::types::now();
     assert!((390 * 86400..=398 * 86400).contains(&remaining));
     let bundle: Value =
         serde_json::from_str(&s.store.get_secret("tls:bundle").unwrap().unwrap()).unwrap();
@@ -345,7 +345,7 @@ async fn cli_ephemeral_ports_are_reported_in_snapshot_and_certificate_lan_url() 
     tls::create(&s).unwrap();
     drop(s);
     let mut child = ChildGuard(
-        Command::new(env!("CARGO_BIN_EXE_know-where"))
+        Command::new(env!("CARGO_BIN_EXE_knowwhere"))
             .arg("--data-dir")
             .arg(dir.path())
             .args([
@@ -360,7 +360,7 @@ async fn cli_ephemeral_ports_are_reported_in_snapshot_and_certificate_lan_url() 
                 "--model-list-refresh-interval",
                 "0",
             ])
-            .env("RUST_LOG", "know_where=info")
+            .env("RUST_LOG", "knowwhere=info")
             .env("NO_COLOR", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -448,7 +448,7 @@ fn cli_with_certificate_keeps_plain_http_on_loopback() {
     let (dir, s) = setup();
     tls::create(&s).unwrap();
     drop(s);
-    let mut command = Command::new(env!("CARGO_BIN_EXE_know-where"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_knowwhere"));
     command
         .arg("--data-dir")
         .arg(dir.path())
@@ -464,7 +464,7 @@ fn cli_with_certificate_keeps_plain_http_on_loopback() {
             "--model-list-refresh-interval",
             "0",
         ])
-        .env("RUST_LOG", "know_where=info")
+        .env("RUST_LOG", "knowwhere=info")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = ChildGuard(command.spawn().unwrap());
@@ -527,7 +527,7 @@ async fn dashboard_boundary_accepts_mapped_loopback_and_rejects_origin_port_mism
         req.extensions_mut()
             .insert(ConnectInfo(remote.parse::<SocketAddr>().unwrap()));
         assert_eq!(
-            know_where::app(s.clone())
+            knowwhere::app(s.clone())
                 .oneshot(req)
                 .await
                 .unwrap()
@@ -607,10 +607,10 @@ async fn http2_authority_and_transport_default_ports_use_the_same_local_boundary
         req.extensions_mut()
             .insert(ConnectInfo("127.0.0.1:55".parse::<SocketAddr>().unwrap()));
         if https {
-            req.extensions_mut().insert(know_where::Https);
+            req.extensions_mut().insert(knowwhere::Https);
         }
         assert_eq!(
-            know_where::app(s.clone())
+            knowwhere::app(s.clone())
                 .oneshot(req)
                 .await
                 .unwrap()
@@ -649,7 +649,7 @@ async fn every_non_api_path_is_local_only_even_with_forwarded_loopback_and_a_key
             "192.168.1.50:55".parse::<SocketAddr>().unwrap(),
         ));
         assert_eq!(
-            know_where::app(s.clone())
+            knowwhere::app(s.clone())
                 .oneshot(req)
                 .await
                 .unwrap()

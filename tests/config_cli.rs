@@ -1,6 +1,6 @@
 //! Process-level CLI and startup regressions. All credentials and databases are fixtures.
-use know_where::types::{Catalog, Pin};
-use know_where::{AppState, Config, Store};
+use knowwhere::types::{Catalog, Pin};
+use knowwhere::{AppState, Config, Store};
 use serde_json::{Value, json};
 #[cfg(unix)]
 use std::path::Path;
@@ -30,7 +30,7 @@ impl Fixture {
         Self { directory, config }
     }
     fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_know-where"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_knowwhere"));
         command
             .env_clear()
             .args(args)
@@ -70,7 +70,7 @@ fn key(output: Output) -> String {
 }
 #[cfg(unix)]
 fn catalog(config: &Config) -> Catalog {
-    Store::open(&config.data_dir.join("know-where.db"))
+    Store::open(&config.data_dir.join("knowwhere.db"))
         .unwrap()
         .catalog()
         .unwrap()
@@ -85,7 +85,7 @@ fn cli_gateway_key_survives_processes_and_rotation_replaces_it() {
     assert_ne!(first, rotated);
     assert_eq!(rotated, key(f.run(&["key", "show"])));
     assert_eq!(
-        Store::open(&f.config.data_dir.join("know-where.db"))
+        Store::open(&f.config.data_dir.join("knowwhere.db"))
             .unwrap()
             .gateway_key()
             .unwrap(),
@@ -146,7 +146,7 @@ fn environment_prefix_precedence_and_case_insensitivity_match_documented_aliases
     let one = f.directory.path().join("first");
     let two = f.directory.path().join("second");
     let three = f.directory.path().join("third");
-    let output = Command::new(env!("CARGO_BIN_EXE_know-where"))
+    let output = Command::new(env!("CARGO_BIN_EXE_knowwhere"))
         .env_clear()
         .args(["key", "show"])
         .arg("--seed-file")
@@ -159,14 +159,14 @@ fn environment_prefix_precedence_and_case_insensitivity_match_documented_aliases
     key(output);
     assert!(!one.exists());
     assert!(!two.exists());
-    assert!(three.join("know-where.db").exists());
+    assert!(three.join("knowwhere.db").exists());
 }
 
 #[test]
 fn default_data_directory_uses_userprofile_when_home_is_absent() {
     let f = Fixture::new();
     let profile = f.directory.path().join("windows-user");
-    let output = Command::new(env!("CARGO_BIN_EXE_know-where"))
+    let output = Command::new(env!("CARGO_BIN_EXE_knowwhere"))
         .env_clear()
         .env("USERPROFILE", &profile)
         .args(["key", "show"])
@@ -175,7 +175,7 @@ fn default_data_directory_uses_userprofile_when_home_is_absent() {
         .output()
         .unwrap();
     key(output);
-    assert!(profile.join(".know-where/know-where.db").exists());
+    assert!(profile.join(".knowwhere/knowwhere.db").exists());
     assert!(!f.config.data_dir.exists());
 }
 
@@ -339,7 +339,7 @@ async fn invalid_override_does_not_replace_catalog_secret_or_applied_content_has
         &json!({"models":[{"id":"local","contextWindow":0,"apiKey":"must-not-write"}]}),
     );
     assert!(AppState::open(f.config.clone()).is_err());
-    let store = Store::open(&f.config.data_dir.join("know-where.db")).unwrap();
+    let store = Store::open(&f.config.data_dir.join("knowwhere.db")).unwrap();
     assert_eq!(store.get_setting("seed_override_hash").unwrap(), hash);
     assert_eq!(
         store.get_secret("model:local").unwrap().as_deref(),
@@ -365,7 +365,7 @@ fn catalog_context_tool_and_effort_validation_rejects_invalid_seed_shapes() {
         seed["models"][0]["effort"] = effort.clone();
         let c: Catalog = serde_json::from_value(seed).unwrap();
         assert!(
-            know_where::routing::validate_catalog(&c).is_err(),
+            knowwhere::routing::validate_catalog(&c).is_err(),
             "accepted {effort}"
         );
     }
@@ -374,7 +374,7 @@ fn catalog_context_tool_and_effort_validation_rejects_invalid_seed_shapes() {
         seed["models"][0][field] = json!(0);
         let c: Catalog = serde_json::from_value(seed).unwrap();
         assert!(
-            know_where::routing::validate_catalog(&c).is_err(),
+            knowwhere::routing::validate_catalog(&c).is_err(),
             "accepted zero {field}"
         );
     }
@@ -382,7 +382,7 @@ fn catalog_context_tool_and_effort_validation_rejects_invalid_seed_shapes() {
     valid["models"][0]["supportsTools"] = json!(false);
     valid["models"][0]["effort"] = json!({"mode":"chat_template_kwargs","levels":["low","high"],"kwargs":{"low":{"thinking":false},"high":{"thinking":true}},"default":"low"});
     let c: Catalog = serde_json::from_value(valid).unwrap();
-    know_where::routing::validate_catalog(&c).unwrap();
+    knowwhere::routing::validate_catalog(&c).unwrap();
     assert!(!c.models[0].supports_tools);
 }
 
@@ -414,7 +414,7 @@ async fn zero_refresh_interval_never_contacts_even_configured_logged_in_provider
     config.openrouter_api_base = format!("http://{address}/v1");
     let state = AppState::open(config).unwrap();
     state.store.set_secret("openrouter", "fixture-key").unwrap();
-    know_where::start_background(state);
+    knowwhere::start_background(state);
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     server.abort();
@@ -430,7 +430,7 @@ fn cli_existing_world_readable_data_is_restricted() {
     key(f.run(&["key", "show"]));
     for (path, mode) in [
         (f.config.data_dir.as_path(), 0o700),
-        (Path::new(&f.config.data_dir.join("know-where.db")), 0o600),
+        (Path::new(&f.config.data_dir.join("knowwhere.db")), 0o600),
     ] {
         assert_eq!(
             std::fs::metadata(path).unwrap().permissions().mode() & 0o777,

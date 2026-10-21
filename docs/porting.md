@@ -1,6 +1,6 @@
 # Rust port verification
 
-`know-where` rebuilds the behavior of a local `.reference/simple-router` checkout as a Rust application. That reference is not distributed in this repository. Its source and test cases informed Rust regression tests and an offline comparison harness.
+`knowwhere` rebuilds the behavior of a local `.reference/simple-router` checkout as a Rust application. That reference is not distributed in this repository. Its source and test cases informed Rust regression tests and an offline comparison harness.
 
 ## Implemented scope
 
@@ -31,17 +31,31 @@ On macOS ARM64:
 - Installed Claude Code 2.1.306 and Codex 0.163.0: actual local tool execution, tool output returned to the fake OpenRouter, final answer, and unchanged fixture settings/credentials. Conflicting Claude session settings are overridden by a private temporary overlay; no provider secrets appear in child arguments.
 - Focused review regressions: interactive Ctrl-C preserves the session, noninteractive termination closes tools/listener, reserved setup IDs are preserved, Codex provider override variants are blocked, reasoning replay uses a server-only persistent key, and truncated tools report incomplete output.
 - RustSec audit: no known vulnerabilities; one informational unmaintained notice for transitive `rustls-pemfile`. GitHub workflows also pass actionlint.
-- Installed Claude Code 2.1.306 and Codex 0.163.0: real tool-read / tool-output / final-answer sessions through fake OpenRouter, with saved harness config and synthetic auth files unchanged.
 
 Run `scripts/check.sh` for the Rust checks. `tests/differential.py` and `tests/sdk-smoke/run.py` expose command-line arguments for running the optional .NET comparisons. Their upstream endpoints are local fakes; they consume no provider inference credits.
 
 The 162-test total is for macOS; Unix-only process and terminal tests are not counted on Windows.
 
+[GitHub CI on commit `aa75330`](https://github.com/bubstackdev/knowwhere/actions/runs/39673115918) passed Linux, Apple silicon and Intel macOS, and Windows, including installation through Cargo's Git source and archive extraction checks. Those runs used the earlier executable spelling. The KnowWhere rename also passed the local Rust, SDK, real-harness, differential and archive checks; CI checks each pushed revision. Native archives have not been published.
+
+## Live OpenRouter validation
+
+On 2026-10-21, installed Claude Code and Codex each completed a live local-tool round trip through OpenRouter using `xiaomi/mimo-v2.6-pro-ultraspeed`: tool request, actual local execution, returned tool output and final answer. Each harness made two inference API calls.
+
+| Validation | Reported cost (USD) |
+| --- | ---: |
+| Claude Code, two inference calls | 0.00419878 |
+| Codex, two inference calls | 0.03568091 |
+| Discovery | 0.00018270 |
+| **Total** | **0.04006239** |
+
+These are the recorded validation charges, not a quote for future sessions. No API keys or credential data are included in the repository or this record.
+
 The original 719 tests have not all been mechanically translated or run directly against the Rust server. Differential and SDK tests provide independent coverage, rather than a claim that every internal .NET test has a corresponding Rust test.
 
 ## Intentional implementation differences
 
-- The executable and default data directory are renamed to `know-where` and `~/.know-where`.
+- The executable and default data directory are renamed to `knowwhere` and `~/.knowwhere`.
 - SQLite uses a new schema. Credentials use authenticated ChaCha20-Poly1305 encryption with an owner-only key file. Existing EF Core databases and ASP.NET Data Protection credentials are not imported; fresh logins are required.
 - The dashboard uses bundled HTML/CSS/JavaScript and local JSON settings endpoints instead of Blazor Server. Monitoring refreshes periodically. Settings mutations read current state and change the selected section.
 - Generated certificates use ECDSA P-256 instead of RSA-2048. They retain the single-use constrained CA, local identities, 397-day validity and encrypted server key. Supplied PKCS#12 import requires a system `openssl` executable; generated certificates and normal HTTPS serving do not.
@@ -49,6 +63,6 @@ The original 719 tests have not all been mechanically translated or run directly
 
 ## Validation limits
 
-Live Claude/Codex authentication and paid OpenRouter calls have not been exercised with user accounts. Real installed Claude Code and Codex are tested with local fake inference endpoints and fixture credentials. OAuth and protocol behavior are covered with local fixtures, including refresh cancellation and concurrent credential rejection.
+Claude/Codex subscription OAuth login and refresh still require account-specific live testing. Their protocol behavior is covered with local fixtures, including refresh cancellation and concurrent credential rejection. Real installed harnesses have passed both local fake-provider tests and the live OpenRouter validation recorded above.
 
-Cross-platform CI is configured for Linux, macOS and Windows, but only macOS was executed locally. The application remains a single-user gateway; proxying a remote dashboard connection through loopback would defeat its direct-connection locality boundary.
+Local validation ran on macOS, with additional platforms exercised by GitHub CI as recorded above. The application remains a single-user gateway; proxying a remote dashboard connection through loopback would defeat its direct-connection locality boundary.

@@ -40,7 +40,7 @@ jobs:
         run: python scripts/package.py --verify
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: know-where-${{ matrix.os }}
+          name: knowwhere-${{ matrix.os }}
           path: target/dist/*
           if-no-files-found: error
 
@@ -56,7 +56,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - run: cargo build --locked
-      - run: python3 tests/sdk-smoke/run.py --rust-bin target/debug/know-where
+      - run: python3 tests/sdk-smoke/run.py --rust-bin target/debug/knowwhere
 
   harness-smoke:
     runs-on: ubuntu-22.04

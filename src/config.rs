@@ -44,7 +44,7 @@ impl Default for Config {
                 .or_else(|| std::env::var_os("USERPROFILE"))
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("."))
-                .join(".know-where"),
+                .join(".knowwhere"),
             seed_file: None,
             seed_override_file: None,
             listen_address: "0.0.0.0".parse().unwrap(),

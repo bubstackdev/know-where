@@ -25,7 +25,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 
 const MAX_BODY: usize = 32 * 1024 * 1024;
-const REASONING_AAD: &[u8] = b"know-where.responses.reasoning.v1";
+const REASONING_AAD: &[u8] = b"knowwhere.responses.reasoning.v1";
 type Result<T> = std::result::Result<T, String>;
 fn string<'a>(v: &'a Value, name: &str) -> Result<&'a str> {
     v.get(name)

@@ -6,7 +6,7 @@ use axum::{
     routing::post,
 };
 use futures_util::StreamExt;
-use know_where::{AppState, Config, Store, app, types::Catalog};
+use knowwhere::{AppState, Config, Store, app, types::Catalog};
 use serde_json::{Value, json};
 use std::{
     sync::{Arc, Mutex},

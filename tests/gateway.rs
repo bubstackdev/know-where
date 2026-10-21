@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use know_where::{AppState, Config, routing, types::*};
+use knowwhere::{AppState, Config, routing, types::*};
 use serde_json::{Value, json};
 use std::{
     net::SocketAddr,
@@ -163,7 +163,7 @@ async fn send(s: &AppState, mut v: Value, session: &str) -> (u16, Value) {
     let mut r = request(s, "/v1/messages", Some(v));
     r.headers_mut()
         .insert("x-claude-code-session-id", session.parse().unwrap());
-    let r = know_where::app(s.clone()).oneshot(r).await.unwrap();
+    let r = knowwhere::app(s.clone()).oneshot(r).await.unwrap();
     let code = r.status().as_u16();
     (code, json_body(r).await)
 }
@@ -193,7 +193,7 @@ async fn round_robin_pins_survive_restart_and_sibling_requests_share_turn() {
 async fn token_count_does_not_pin_rotate_or_record() {
     let u = upstream().await;
     let (_, s) = setup(&u.base, &["a", "b"]);
-    let r = know_where::app(s.clone())
+    let r = knowwhere::app(s.clone())
         .oneshot(request(&s, "/v1/messages/count_tokens", Some(message())))
         .await
         .unwrap();
@@ -257,7 +257,7 @@ async fn streaming_error_before_content_can_failover() {
     let (_, s) = setup(&u.base, &["error-first", "b"]);
     let mut v = message();
     v["stream"] = json!(true);
-    let response = know_where::app(s.clone())
+    let response = knowwhere::app(s.clone())
         .oneshot(request(&s, "/v1/messages", Some(v)))
         .await
         .unwrap();
@@ -280,7 +280,7 @@ async fn committed_stream_error_never_retries_and_records_failed_outcome() {
     let (_, s) = setup(&u.base, &["error-later", "b"]);
     let mut v = message();
     v["stream"] = json!(true);
-    let response = know_where::app(s.clone())
+    let response = knowwhere::app(s.clone())
         .oneshot(request(&s, "/v1/messages", Some(v)))
         .await
         .unwrap();
@@ -316,7 +316,7 @@ async fn successful_usage_is_priced_and_available_by_client_session() {
     assert_eq!(rows[0].input_tokens, 10);
     assert_eq!(rows[0].output_tokens, 3);
     assert_eq!(rows[0].cost_usd_micros, 32);
-    let response = know_where::app(s.clone())
+    let response = knowwhere::app(s.clone())
         .oneshot(request(&s, "/v1/sessions/cost%2Fa/cost", None))
         .await
         .unwrap();
@@ -329,7 +329,7 @@ async fn successful_usage_is_priced_and_available_by_client_session() {
 async fn cancellation_before_response_is_499_and_releases_capacity() {
     let u = upstream().await;
     let (_, s) = setup(&u.base, &["slow"]);
-    let app = know_where::app(s.clone());
+    let app = knowwhere::app(s.clone());
     let req = request(&s, "/v1/messages", Some(message()));
     let task = tokio::spawn(async move { app.oneshot(req).await });
     for _ in 0..100 {
@@ -372,7 +372,7 @@ async fn gateway_all_key_schemes_and_rotation() {
             .unwrap(),
         );
         assert_eq!(
-            know_where::app(s.clone())
+            knowwhere::app(s.clone())
                 .oneshot(req)
                 .await
                 .unwrap()
@@ -383,7 +383,7 @@ async fn gateway_all_key_schemes_and_rotation() {
     let req = request(&s, "/v1/models", None);
     s.store.rotate_gateway_key().unwrap();
     assert_eq!(
-        know_where::app(s.clone())
+        knowwhere::app(s.clone())
             .oneshot(req)
             .await
             .unwrap()
@@ -427,7 +427,7 @@ async fn dashboard_enforces_tcp_host_origin_and_ignores_forwarded_headers() {
             req.headers_mut().insert("origin", origin.parse().unwrap());
         }
         assert_eq!(
-            know_where::app(s.clone())
+            knowwhere::app(s.clone())
                 .oneshot(req)
                 .await
                 .unwrap()
@@ -450,7 +450,7 @@ async fn malformed_duplicate_keys_and_invalid_surrogates_are_400() {
     ] {
         let mut req = request(&s, "/v1/messages", Some(message()));
         *req.body_mut() = Body::from(text);
-        let r = know_where::app(s.clone()).oneshot(req).await.unwrap();
+        let r = knowwhere::app(s.clone()).oneshot(req).await.unwrap();
         assert_eq!(r.status(), 400);
         assert_eq!(r.headers()["x-weave-model-class"], "high");
     }
@@ -514,7 +514,7 @@ fn images_use_bounded_token_estimate() {
 async fn active_conversation_lease_releases_after_a_model_is_renamed_back() {
     let u = upstream().await;
     let (_dir, s) = setup(&u.base, &["slow"]);
-    let app = know_where::app(s.clone());
+    let app = knowwhere::app(s.clone());
     let req = request(&s, "/v1/messages", Some(message()));
     let running = tokio::spawn(async move { app.oneshot(req).await });
     for _ in 0..100 {
@@ -537,7 +537,7 @@ async fn active_conversation_lease_releases_after_a_model_is_renamed_back() {
         .unwrap();
         model["id"] = json!(new);
         model["existingId"] = json!(old);
-        let response = know_where::app(s.clone())
+        let response = knowwhere::app(s.clone())
             .oneshot(request(&s, "/ui/api/models", Some(model)))
             .await
             .unwrap();
@@ -579,7 +579,7 @@ async fn session_and_chart_totals_saturate_when_recorded_costs_exceed_integer_ra
             .unwrap();
     }
     for path in ["/v1/sessions/huge/cost", "/ui/api/charts"] {
-        let response = know_where::app(s.clone())
+        let response = knowwhere::app(s.clone())
             .oneshot(request(&s, path, None))
             .await
             .unwrap();
