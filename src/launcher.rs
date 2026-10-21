@@ -278,12 +278,25 @@ fn command(harness: &str, args: &[String], base: &str, key: &str) -> Result<Harn
         let (forwarded, mut settings) = claude_settings(args)?;
         let managed = json!({
             "ANTHROPIC_BASE_URL":base,"ANTHROPIC_AUTH_TOKEN":key,"ANTHROPIC_API_KEY":key,
-            "ANTHROPIC_MODEL":"claude-sonnet-4-6","ANTHROPIC_DEFAULT_OPUS_MODEL":"claude-opus-4-6",
+            "ANTHROPIC_MODEL":"knowwhere", "ANTHROPIC_DEFAULT_MODEL":"knowwhere",
+            "ANTHROPIC_CUSTOM_MODEL_OPTION":"knowwhere",
+            "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME":"KnowWhere",
+            "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION":"Uses KnowWhere routing; the upstream model is selected by the gateway",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL":"claude-opus-4-6",
+            "ANTHROPIC_DEFAULT_FABLE_MODEL":"claude-fable-5-1",
             "ANTHROPIC_DEFAULT_SONNET_MODEL":"claude-sonnet-4-6","ANTHROPIC_DEFAULT_HAIKU_MODEL":"claude-haiku-4-5",
+            "ANTHROPIC_DEFAULT_FABLE_MODEL_NAME":"KnowWhere (Fable route)",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME":"KnowWhere (Opus route)",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME":"KnowWhere (Sonnet route)",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME":"KnowWhere (Haiku route)",
+            "ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION":"Routes through KnowWhere using your catalog aliases",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION":"Routes through KnowWhere using your catalog aliases",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION":"Routes through KnowWhere using your catalog aliases",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION":"Routes through KnowWhere using your catalog aliases",
             "CLAUDE_CODE_USE_BEDROCK":"0","CLAUDE_CODE_USE_VERTEX":"0","CLAUDE_CODE_USE_FOUNDRY":"0",
             "NO_PROXY":no_proxy,"no_proxy":no_proxy,
         });
-        merge_settings(&mut settings, json!({"env":managed}));
+        merge_settings(&mut settings, json!({"env":managed.clone()}));
         let mut file = tempfile::Builder::new()
             .prefix("knowwhere-claude-")
             .suffix(".json")
@@ -303,17 +316,17 @@ fn command(harness: &str, args: &[String], base: &str, key: &str) -> Result<Harn
             .arg(file.path())
             .args(&forwarded[separator..]);
         overlay = Some(file);
-        command
-            .env("ANTHROPIC_BASE_URL", base)
-            .env("ANTHROPIC_AUTH_TOKEN", key)
-            .env("ANTHROPIC_API_KEY", key)
-            .env("ANTHROPIC_MODEL", "claude-sonnet-4-6")
-            .env("ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-4-6")
-            .env("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-6")
-            .env("ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-haiku-4-5")
-            .env_remove("CLAUDE_CODE_USE_BEDROCK")
-            .env_remove("CLAUDE_CODE_USE_VERTEX")
-            .env_remove("CLAUDE_CODE_USE_FOUNDRY");
+        for (name, value) in managed
+            .as_object()
+            .expect("managed environment is an object")
+        {
+            command.env(
+                name,
+                value
+                    .as_str()
+                    .expect("managed environment values are strings"),
+            );
+        }
     } else {
         let provider = format!(
             "model_providers.knowwhere={{name=\"KnowWhere\",base_url=\"{base}/v1\",env_key=\"KNOW_WHERE_GATEWAY_KEY\",wire_api=\"responses\",requires_openai_auth=false,supports_websockets=false,capabilities={{remote_compaction=\"unsupported\"}}}}"
@@ -395,6 +408,23 @@ pub async fn run(mut state: AppState, args: &[String]) -> Result<i32> {
     };
     let base = format!("http://{address}");
     eprintln!("KnowWhere → {harness}; gateway {base} (session only)");
+    if let Some(ids) = catalog.tiers.get(&catalog.default_tier) {
+        let upstreams = ids
+            .iter()
+            .filter_map(|id| {
+                catalog
+                    .models
+                    .iter()
+                    .find(|model| model.id == *id && model.enabled)
+            })
+            .map(|model| model.upstream_model_id.as_str())
+            .collect::<Vec<_>>();
+        eprintln!(
+            "KnowWhere default route: {} → {}",
+            catalog.default_tier,
+            upstreams.join(", ")
+        );
+    }
     let mut harness_command = command(harness, &args[1..], &base, &key)?;
     let cmd = &mut harness_command.command;
     // Noninteractive processes can have an independent group for reliable tool
@@ -563,6 +593,24 @@ mod tests {
             "http://127.0.0.1:1234"
         );
         assert_eq!(overlay["env"]["ANTHROPIC_API_KEY"], "private-gateway-key");
+        assert_eq!(overlay["env"]["ANTHROPIC_MODEL"], "knowwhere");
+        assert_eq!(overlay["env"]["ANTHROPIC_CUSTOM_MODEL_OPTION"], "knowwhere");
+        assert_eq!(
+            overlay["env"]["ANTHROPIC_CUSTOM_MODEL_OPTION_NAME"],
+            "KnowWhere"
+        );
+        for (name, value) in overlay["env"].as_object().unwrap() {
+            if name == "KEEP_USER_PREF" {
+                continue;
+            }
+            assert!(
+                cmd.command
+                    .as_std()
+                    .get_envs()
+                    .any(|(key, env)| key == OsStr::new(name)
+                        && env == value.as_str().map(OsStr::new))
+            );
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

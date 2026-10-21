@@ -37,6 +37,8 @@ Use `knowwhere setup --model openrouter/auto-beta` for the beta router, or `--mo
 
 `run` starts a temporary loopback gateway and supplies connection settings only to the child process. KnowWhere does not edit Claude/Codex configuration files or your shell configuration. The harness can still write its normal session state and history. The gateway stops when the child exits, and the child's exit code is preserved.
 
+Claude starts with **KnowWhere** selected in `/model`. That is a gateway route, not a promise of a particular upstream model. The launcher prints the configured default upstream route before Claude starts; OpenRouter Auto chooses the actual model per request. Claude's Fable/Opus/Sonnet/Haiku route choices still use KnowWhere and its catalog aliases. Configure the upstream through KnowWhere setup or Settings, rather than Claude's model picker. Launching plain `claude` uses your usual configuration.
+
 Pass harness arguments after `--`:
 
 ```sh

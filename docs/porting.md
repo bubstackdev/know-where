@@ -49,6 +49,8 @@ On 2026-10-21, installed Claude Code and Codex each completed a live local-tool 
 | Discovery | 0.00018270 |
 | **Total** | **0.04006239** |
 
+The capped Auto setup and Claude model identity fix were separately validated on the same date with Claude Code 2.1.307. A live Read-tool round trip through `openrouter/auto` resolved to `deepseek/deepseek-v4-flash-0731`, made two inference calls, and reported $0.00035406 for 1,793 prompt and 448 completion tokens. Both calls carried `provider.max_price: {"prompt": 1, "completion": 1}`. An isolated interactive terminal check also confirmed that `/model` selects **KnowWhere** and labels family choices as gateway routes. The current local Rust suite has 163 passing tests; the harness smoke test checks Claude's startup model identity and request caps as well as tool execution.
+
 These are the recorded validation charges, not a quote for future sessions. No API keys or credential data are included in the repository or this record.
 
 The original 719 tests have not all been mechanically translated or run directly against the Rust server. Differential and SDK tests provide independent coverage, rather than a claim that every internal .NET test has a corresponding Rust test.

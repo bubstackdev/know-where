@@ -180,6 +180,7 @@ class FakeOpenRouter:
 
     def complete(self, body: dict) -> list[dict]:
         assert body.get("model") == MODEL, f"Unexpected upstream model: {body.get('model')}"
+        assert body.get("provider", {}).get("max_price") == {"prompt": 1, "completion": 1}, "Saved price caps missing from harness request"
         tool_messages = [message for message in body.get("messages", []) if message.get("role") == "tool"]
         if tool_messages:
             assert self.returned_tool, "Tool output arrived before a model tool call"
@@ -262,6 +263,11 @@ def exercise(binary: Path, harness: str, executable: str, *, claude_normal: bool
             assert not fake.errors, fake.errors
             assert fake.returned_tool and fake.saw_tool_output and fake.returned_final, f"Incomplete real tool round trip: {fake.requests}"
             assert FINAL in result.stdout, f"Final answer was not emitted:\n{result.stdout[-6000:]}"
+            if harness == "claude":
+                events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+                init = next(event for event in events if event.get("type") == "system" and event.get("subtype") == "init")
+                assert init["model"] == "knowwhere", f"Misleading Claude model identity: {init['model']}"
+
             for path, previous in before.items():
                 assert digest(path) == previous, f"Saved harness settings changed: {path.name}"
             print(f"PASS {harness}: real tool execution, returned fixture output, final answer, saved settings unchanged ({len(fake.requests)} inference calls)")
