@@ -1,0 +1,76 @@
+name: Release archives
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      TARGET: ${{ matrix.target }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal --target "$TARGET"
+      - run: rustup default stable
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - run: cargo test --locked --all-targets --target "$TARGET"
+      - run: python scripts/package.py --target "$TARGET" --release-tag "$RELEASE_TAG" --verify
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ matrix.target }}
+          path: target/dist/*
+          if-no-files-found: error
+
+  draft:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Collect archive checksums
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          directory = Path('dist')
+          checksums = sorted(directory.glob('*.sha256'))
+          if len(checksums) != 4:
+              raise SystemExit('Expected all four platform checksums')
+          (directory / 'SHA256SUMS').write_text(''.join(p.read_text() for p in checksums))
+          PY
+      - name: Verify every release archive
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS
+      - name: Create reviewable draft release
+        run: gh release create "$RELEASE_TAG" dist/*.tar.gz dist/*.zip dist/*.sha256 dist/SHA256SUMS --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "know-where $RELEASE_TAG" --generate-notes

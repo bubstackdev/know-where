@@ -1,0 +1,12 @@
+/target/
+/.reference/
+/.local/
+seed.local.json
+*.db
+*.db-shm
+*.db-wal
+know-where.key
+.DS_Store
+
+__pycache__/
+*.pyc

@@ -1,0 +1,47 @@
+{
+  "defaultTier": "high",
+  "models": [
+    { "id": "claude-fable-5-1", "provider": "claude", "upstreamModelId": "claude-fable-5-1", "enabled": true },
+    { "id": "claude-opus-5-5", "provider": "claude", "upstreamModelId": "claude-opus-5-5", "enabled": true },
+    { "id": "claude-sonnet-5-5", "provider": "claude", "upstreamModelId": "claude-sonnet-5-5", "enabled": true },
+    { "id": "claude-haiku-5-5", "provider": "claude", "upstreamModelId": "claude-haiku-5-5", "enabled": true },
+    { "id": "gpt-6-astra", "provider": "codex", "upstreamModelId": "gpt-6-astra", "enabled": true, "effort": { "levels": [ "minimal", "low", "medium", "high", "xhigh", "max" ] } },
+    { "id": "gpt-6.1-sol", "provider": "codex", "upstreamModelId": "gpt-6.1-sol", "enabled": true },
+    { "id": "gpt-5.6-terra", "provider": "codex", "upstreamModelId": "gpt-5.6-terra", "enabled": true },
+    { "id": "gpt-6-luna", "provider": "codex", "upstreamModelId": "gpt-6-luna", "enabled": true },
+    { "id": "mimo-2.6", "provider": "local", "upstreamModelId": "mimo-2.6", "enabled": false, "baseUrl": "http://localhost:8001/v1", "contextWindow": 131072, "supportsTools": true, "supportsVision": false,
+      "effort": { "mode": "reasoning_effort", "levels": [ "low", "medium", "high" ] } },
+    { "id": "qwen-3.8-flash-next", "provider": "local", "upstreamModelId": "qwen-3.8-flash-next", "enabled": false, "baseUrl": "http://localhost:8002/v1", "contextWindow": 131072, "supportsTools": true, "supportsVision": false,
+      "effort": { "mode": "chat_template_kwargs", "levels": [ "none", "high" ], "kwargs": { "none": { "enable_thinking": false }, "high": { "enable_thinking": true } } } },
+    { "id": "qwen3.8-27b", "provider": "local", "upstreamModelId": "qwen3.8-27b", "enabled": false, "baseUrl": "http://localhost:8003/v1", "contextWindow": 131072, "supportsTools": true, "supportsVision": false,
+      "effort": { "mode": "chat_template_kwargs", "levels": [ "none", "high" ], "kwargs": { "none": { "enable_thinking": false }, "high": { "enable_thinking": true } } } },
+    { "id": "d3", "provider": "systemone", "upstreamModelId": "vllm-sr/d3", "enabled": false, "baseUrl": "http://localhost:8000/v1" }
+  ],
+  "tiers": {
+    "max": [ "claude-fable-5-1", "gpt-6-astra" ],
+    "high": [ "claude-opus-5-5", "gpt-6.1-sol" ],
+    "mid": [ "claude-sonnet-5-5", "gpt-5.6-terra", "mimo-2.6", "qwen-3.8-flash-next" ],
+    "low": [ "claude-haiku-5-5", "gpt-6-luna", "qwen3.8-27b", "mimo-2.6", "qwen-3.8-flash-next" ]
+  },
+  "pricesNote": "USD per million tokens (input, output, cacheRead, cacheWrite, and cacheWrite1h for one-hour cache writes, defaulting to cacheWrite). ESTIMATES of public list prices, used only to report spend; edit the ModelPrices table to change them. Codex prices are guesses (subscription models have no published per-token price). Local models cost $0.",
+  "prices": {
+    "claude-fable-5-1": { "input": 10.00, "output": 50.00, "cacheRead": 0.25, "cacheWrite": 12.50, "cacheWrite1h": 20.00 },
+    "claude-opus-5-5": { "input": 4.00, "output": 20.00, "cacheRead": 0.20, "cacheWrite": 5.00, "cacheWrite1h": 8.00 },
+    "claude-sonnet-5-5": { "input": 2.00, "output": 10.00, "cacheRead": 0.20, "cacheWrite": 2.50, "cacheWrite1h": 4.00 },
+    "claude-haiku-5-5": { "input": 0.10, "output": 0.50, "cacheRead": 0.01, "cacheWrite": 0.125, "cacheWrite1h": 0.20 },
+    "gpt-6-astra": { "input": 10.00, "output": 40.00, "cacheRead": 1.00, "cacheWrite": 10.00 },
+    "gpt-6.1-sol": { "input": 5.00, "output": 20.00, "cacheRead": 0.50, "cacheWrite": 5.00 },
+    "gpt-5.6-terra": { "input": 1.25, "output": 10.00, "cacheRead": 0.125, "cacheWrite": 1.25 },
+    "gpt-6-luna": { "input": 0.25, "output": 2.00, "cacheRead": 0.025, "cacheWrite": 0.25 },
+    "mimo-2.6": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+    "qwen-3.8-flash-next": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+    "qwen3.8-27b": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+    "d3": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+  },
+  "aliases": [
+    { "pattern": "*fable*", "tier": "max" },
+    { "pattern": "*opus*", "tier": "high" },
+    { "pattern": "*sonnet*", "tier": "mid" },
+    { "pattern": "*haiku*", "tier": "low" }
+  ]
+}

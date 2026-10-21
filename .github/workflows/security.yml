@@ -1,0 +1,24 @@
+name: Dependency security
+on:
+  push:
+    paths: ['Cargo.toml', 'Cargo.lock', '.github/workflows/security.yml']
+  pull_request:
+    paths: ['Cargo.toml', 'Cargo.lock', '.github/workflows/security.yml']
+  schedule:
+    - cron: '19 4 * * 2'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rustsec:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup default stable
+      - name: Install pinned RustSec scanner
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Audit locked dependencies
+        run: cargo audit --file Cargo.lock
