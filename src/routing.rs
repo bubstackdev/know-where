@@ -378,6 +378,10 @@ fn admits(state: &AppState, m: &Model, key: &str) -> bool {
     }
     holds.keys().filter(|(id, _)| id == &m.id).count() < (m.max_conversations.unwrap() as usize)
 }
+// A tier is a preference: exhaust it before descending to lower tiers.
+fn fallback_tiers(tier: &str) -> &'static [&'static str] {
+    &TIERS[TIERS.iter().position(|t| *t == tier).unwrap_or(TIERS.len())..]
+}
 struct SelectionRequest<'a> {
     catalog: &'a Catalog,
     tier: &'a str,
@@ -402,13 +406,20 @@ async fn select(
     } = *request;
     let _gate = state.runtime.assignment.lock().await;
     let mut pool = Vec::new();
-    for id in c.tiers.get(tier).into_iter().flatten() {
-        if let Some(m) = c.models.iter().find(|m| m.id == *id)
-            && !tried.contains(id)
-            && fits(m, v, estimate)
-            && status(state, m).await? == "ok"
-        {
-            pool.push(m.clone())
+    let mut serving_tier = tier;
+    for candidate_tier in fallback_tiers(tier) {
+        for id in c.tiers.get(*candidate_tier).into_iter().flatten() {
+            if let Some(m) = c.models.iter().find(|m| m.id == *id)
+                && !tried.contains(id)
+                && fits(m, v, estimate)
+                && status(state, m).await? == "ok"
+            {
+                pool.push(m.clone())
+            }
+        }
+        if !pool.is_empty() {
+            serving_tier = candidate_tier;
+            break;
         }
     }
     if pool.is_empty() {
@@ -444,7 +455,7 @@ async fn select(
             .filter(|m| m.provider == "local")
             .cloned()
             .collect::<Vec<_>>();
-        if matches!(tier, "mid" | "low") && !locals.is_empty() {
+        if matches!(serving_tier, "mid" | "low") && !locals.is_empty() {
             pool = locals
         }
         pool[(state.store.cursor(tier)? % (pool.len() as u64)) as usize].clone()
@@ -786,7 +797,10 @@ async fn exhausted(
 ) -> Response {
     let cooldowns = state.store.cooldowns().unwrap_or_default();
     let n = now();
-    let ids = c.tiers.get(tier).cloned().unwrap_or_default();
+    let ids = fallback_tiers(tier)
+        .iter()
+        .flat_map(|tier| c.tiers.get(*tier).into_iter().flatten())
+        .collect::<HashSet<_>>();
     let next = cooldowns
         .iter()
         .filter(|cd| {
@@ -835,7 +849,7 @@ async fn exhausted(
         429,
         "rate_limit_error",
         &format!(
-            "model_class_unavailable: no model in the {tier} tier can serve this request now (usage limit, login or availability); retry in {wait} s.{hint}"
+            "model_class_unavailable: no model in the {tier} tier or its lower-tier fallbacks can serve this request now (usage limit, login or availability); retry in {wait} s.{hint}"
         ),
     );
     r.headers_mut()

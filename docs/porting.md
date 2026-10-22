@@ -8,7 +8,7 @@
 | --- | --- |
 | Gateway | Anthropic Messages and token-count endpoints, stateless Responses bridge, model listing, gateway key creation/rotation, client header compatibility |
 | Harness sessions | OpenRouter setup, temporary Claude settings overlay, Codex provider overrides, private loopback gateway, exit-code and signal handling, cleanup without saved harness configuration edits |
-| Routing | Four tiers, ordered aliases, persistent rotation and pins, sibling-session affinity, tool/context eligibility, local conversation capacity, same-tier failover and persisted cooldowns |
+| Routing | Four tiers, ordered aliases, persistent rotation and pins, sibling-session affinity, tool/context eligibility, local conversation capacity, same-tier failover, ordered lower-tier fallback and persisted cooldowns |
 | Providers | Claude subscription, Codex subscription/Responses, local Chat Completions, OpenRouter fixed and automatic routing |
 | Credentials and discovery | PKCE and device login, refresh serialization and rotation persistence across cancellation, model discovery and last-successful caches, OpenRouter capability/pricing updates |
 | Streaming | Sequential Anthropic content blocks, fragmented/interleaved tools, signed reasoning round trips, initial-output grace, configurable keepalives, byte-activity idle timeouts and terminal-event validation |

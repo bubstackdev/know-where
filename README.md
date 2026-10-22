@@ -74,7 +74,7 @@ The `x-weave-model-class` header selects `max`, `high`, `mid`, or `low`. Without
 
 New sessions rotate through eligible models. Session pins and rotation cursors survive restarts. Separate first user messages create separate pins; pins belonging to the same client session start with its eligible model in that tier. Mid and low tiers prefer local models. Local models may limit concurrent conversations and reject prompts above their configured size. Token-count requests do not create pins or consume rotation turns.
 
-Before output begins, rate limits, provider failures, and context overflows may move a request to another model in the same tier. A committed response never fails over. Exhausted tiers return an Anthropic-shaped 429 with `Retry-After`; if every attempted model rejects context length, the gateway returns a compaction-compatible 400.
+Before output begins, rate limits, provider failures, and context overflows may move a request to another model in the same tier. Once that tier has no eligible models left, routing falls back through lower tiers in order (`max` → `high` → `mid` → `low`), applying the same eligibility checks and cooldowns. It never falls back to a higher tier. Pins, usage tier labels, and `X-Weave-Model-Class` retain the requested tier; usage records identify the actual model. A recovered higher tier takes priority again on the next request. A committed response never fails over. Exhausting the requested tier and all lower tiers returns an Anthropic-shaped 429 with `Retry-After`; if every attempted model rejects context length, the gateway returns a compaction-compatible 400.
 
 ## Configuration and storage
 

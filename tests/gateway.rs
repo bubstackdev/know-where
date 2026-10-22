@@ -220,6 +220,150 @@ async fn limited_model_fails_over_and_stays_cooled() {
     assert_eq!(rows[0].model_id, "b");
     assert_eq!(rows[0].outcome.as_deref(), Some("completed"));
 }
+fn set_tiers(s: &AppState, tiers: &[(&str, &[&str])]) {
+    let mut c = s.store.catalog().unwrap();
+    c.tiers = tiers
+        .iter()
+        .map(|(tier, ids)| ((*tier).into(), ids.iter().map(|id| (*id).into()).collect()))
+        .collect();
+    s.store.save_catalog(&c).unwrap();
+}
+#[tokio::test]
+async fn exhausted_tiers_descend_in_order_and_do_not_retry_shared_models() {
+    let u = upstream().await;
+    let (_, s) = setup(&u.base, &["limit-high", "limit-mid", "low"]);
+    set_tiers(
+        &s,
+        &[
+            ("high", &["limit-high"]),
+            ("mid", &["limit-high", "limit-mid"]),
+            ("low", &["low"]),
+        ],
+    );
+    let (status, v) = send(&s, message(), "one").await;
+    assert_eq!(status, 200);
+    assert_eq!(v["model"], "low");
+    {
+        let calls = u.fake.calls.lock().unwrap();
+        assert_eq!(
+            calls
+                .iter()
+                .map(|v| v["model"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["limit-high", "limit-mid", "low"]
+        );
+    }
+    let rows = s.store.usages(10, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].tier.as_deref(), Some("high"));
+    assert_eq!(rows[0].model_id, "low");
+    assert_eq!(s.store.pins().unwrap()[0].tier, "high");
+    assert_eq!(s.store.pins().unwrap()[0].model_id, "low");
+    assert_eq!(send(&s, message(), "one").await.1["model"], "low");
+}
+#[tokio::test]
+async fn requested_tier_precedes_lower_tiers_and_recovers_from_fallback_pin() {
+    let u = upstream().await;
+    let (_, s) = setup(&u.base, &["high", "mid"]);
+    set_tiers(&s, &[("high", &["high"]), ("mid", &["mid"])]);
+    s.runtime.health.write().await.insert("high".into(), false);
+    assert_eq!(send(&s, message(), "one").await.1["model"], "mid");
+    s.runtime.health.write().await.insert("high".into(), true);
+    assert_eq!(send(&s, message(), "one").await.1["model"], "high");
+    assert_eq!(send(&s, message(), "two").await.1["model"], "high");
+}
+#[tokio::test]
+async fn fallback_skips_ineligible_models_and_never_upgrades() {
+    let u = upstream().await;
+    let (_, s) = setup(&u.base, &["max", "mid", "low"]);
+    set_tiers(
+        &s,
+        &[("max", &["max"]), ("mid", &["mid"]), ("low", &["low"])],
+    );
+    let mut c = s.store.catalog().unwrap();
+    c.models
+        .iter_mut()
+        .find(|m| m.id == "mid")
+        .unwrap()
+        .supports_tools = false;
+    s.store.save_catalog(&c).unwrap();
+    let mut v = message();
+    v["tools"] = json!([{"name":"test", "input_schema":{"type":"object"}}]);
+    assert_eq!(send(&s, v, "one").await.1["model"], "low");
+    s.runtime.health.write().await.insert("low".into(), false);
+    let mut req = request(&s, "/v1/messages", Some(message()));
+    req.headers_mut()
+        .insert("x-weave-model-class", "low".parse().unwrap());
+    let r = knowwhere::app(s.clone()).oneshot(req).await.unwrap();
+    assert_eq!(r.status(), 429);
+    assert_eq!(u.fake.calls.lock().unwrap().len(), 1);
+}
+#[tokio::test]
+async fn fallback_exhaustion_retry_after_includes_lower_tier_cooldowns() {
+    let u = upstream().await;
+    let (_, s) = setup(&u.base, &["high", "low"]);
+    set_tiers(&s, &[("high", &["high"]), ("low", &["low"])]);
+    for (id, wait) in [("high", 300), ("low", 120)] {
+        s.store
+            .set_cooldown(&Cooldown {
+                model_id: id.into(),
+                until: now() + wait,
+                reason: "limited".into(),
+            })
+            .unwrap();
+    }
+    let r = knowwhere::app(s.clone())
+        .oneshot(request(&s, "/v1/messages", Some(message())))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 429);
+    let wait = r.headers()["retry-after"]
+        .to_str()
+        .unwrap()
+        .parse::<i64>()
+        .unwrap();
+    assert!((118..=120).contains(&wait));
+    assert!(u.fake.calls.lock().unwrap().is_empty());
+}
+#[tokio::test]
+async fn token_count_can_fall_back_without_pinning_or_recording() {
+    let u = upstream().await;
+    let (_, s) = setup(&u.base, &["low"]);
+    set_tiers(&s, &[("low", &["low"])]);
+    let r = knowwhere::app(s.clone())
+        .oneshot(request(&s, "/v1/messages/count_tokens", Some(message())))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(r.headers()["x-weave-model-class"], "high");
+    assert!(s.store.pins().unwrap().is_empty());
+    assert_eq!(s.store.cursor("high").unwrap(), 0);
+    assert!(s.store.usages(10, None).unwrap().is_empty());
+}
+#[tokio::test]
+async fn cross_tier_streaming_retries_only_before_output_is_committed() {
+    for (model, expected_calls, failed) in [("error-first", 2, false), ("error-later", 1, true)] {
+        let u = upstream().await;
+        let (_, s) = setup(&u.base, &[model, "mid"]);
+        set_tiers(&s, &[("high", &[model]), ("mid", &["mid"])]);
+        let mut v = message();
+        v["stream"] = json!(true);
+        let r = knowwhere::app(s.clone())
+            .oneshot(request(&s, "/v1/messages", Some(v)))
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        let body =
+            String::from_utf8(to_bytes(r.into_body(), 100000).await.unwrap().to_vec()).unwrap();
+        assert!(body.contains("Hello"));
+        assert_eq!(body.contains("event: error"), failed);
+        assert_eq!(body.contains("event: message_stop"), !failed);
+        assert_eq!(u.fake.calls.lock().unwrap().len(), expected_calls);
+        let rows = s.store.usages(10, None).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].model_id, if failed { model } else { "mid" });
+    }
+}
 #[tokio::test]
 async fn all_overflow_is_compaction_error_without_cooldown() {
     let u = upstream().await;
