@@ -2,14 +2,14 @@
 
 KnowWhere is one native executable with its dashboard and initial catalog embedded. End users do not need .NET, Node or Python to run it. Launching a Claude Code or Codex session requires the corresponding harness installed separately and available on PATH.
 
-Source: [bubstackdev/knowwhere](https://github.com/bubstackdev/knowwhere). Native archives have not been published yet; source installation is available. Future archives will appear in [GitHub releases](https://github.com/bubstackdev/knowwhere/releases) after a maintainer publishes the release draft.
+Source: [bubstackdev/know-where](https://github.com/bubstackdev/know-where). Native archives have not been published yet; source installation is available. Future archives will appear in [GitHub releases](https://github.com/bubstackdev/know-where/releases) after a maintainer publishes the release draft.
 
 ## Install from Git
 
 With current stable Rust and a native C/C++ build toolchain:
 
 ```sh
-cargo install --git https://github.com/bubstackdev/knowwhere.git --tag "<existing release tag>" --locked knowwhere
+cargo install --git https://github.com/bubstackdev/know-where.git --tag "<existing release tag>" --locked knowwhere
 knowwhere --version
 ```
 

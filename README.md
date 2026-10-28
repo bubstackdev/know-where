@@ -9,16 +9,16 @@ Developed against the application in the local `.reference/simple-router` checko
 With a current stable Rust toolchain:
 
 ```sh
-cargo install --git https://github.com/bubstackdev/knowwhere.git --locked knowwhere
+cargo install --git https://github.com/bubstackdev/know-where.git --locked knowwhere
 ```
 
 For a published release, pin the existing version tag:
 
 ```sh
-cargo install --git https://github.com/bubstackdev/knowwhere.git --tag "<existing release tag>" --locked knowwhere
+cargo install --git https://github.com/bubstackdev/know-where.git --tag "<existing release tag>" --locked knowwhere
 ```
 
-From a checkout, use `cargo install --path . --locked`. Native archives have not been published yet. The release workflow prepares versioned macOS, Linux and Windows archives and SHA-256 checksums for future [GitHub releases](https://github.com/bubstackdev/knowwhere/releases). See [installation and releases](docs/install.md) for archive selection, checksum verification, updates and maintainer commands.
+From a checkout, use `cargo install --path . --locked`. Native archives have not been published yet. The release workflow prepares versioned macOS, Linux and Windows archives and SHA-256 checksums for future [GitHub releases](https://github.com/bubstackdev/know-where/releases). See [installation and releases](docs/install.md) for archive selection, checksum verification, updates and maintainer commands.
 
 ## Start an OpenRouter session
 

@@ -36,7 +36,7 @@ Run `scripts/check.sh` for the Rust checks. `tests/differential.py` and `tests/s
 
 The 162-test total is for macOS; Unix-only process and terminal tests are not counted on Windows.
 
-[GitHub CI on commit `aa75330`](https://github.com/bubstackdev/knowwhere/actions/runs/39673115918) passed Linux, Apple silicon and Intel macOS, and Windows, including installation through Cargo's Git source and archive extraction checks. Those runs used the earlier executable spelling. The KnowWhere rename also passed the local Rust, SDK, real-harness, differential and archive checks; CI checks each pushed revision. Native archives have not been published.
+[GitHub CI on commit `aa75330`](https://github.com/bubstackdev/know-where/actions/runs/39673115918) passed Linux, Apple silicon and Intel macOS, and Windows, including installation through Cargo's Git source and archive extraction checks. Those runs used the earlier executable spelling. The KnowWhere rename also passed the local Rust, SDK, real-harness, differential and archive checks; CI checks each pushed revision. Native archives have not been published.
 
 ## Live OpenRouter validation
 
