@@ -286,11 +286,30 @@ fn tier(c: &Catalog, h: &HeaderMap, v: &Value) -> Result<String> {
         .unwrap_or_else(|| c.default_tier.clone()))
 }
 pub async fn status(state: &AppState, m: &Model) -> Result<String> {
+    if state
+        .config
+        .moe_policy
+        .as_ref()
+        .is_some_and(|p| p.route(m).is_none())
+    {
+        return Ok("denied".into());
+    }
     if !m.enabled {
         return Ok("disabled".into());
     }
+    let api_key_account = state
+        .config
+        .moe_policy
+        .as_ref()
+        .and_then(|p| p.route(m))
+        .is_some_and(|r| r.account == "api_key");
+    let credential_slot = if api_key_account {
+        format!("model:{}", m.id)
+    } else {
+        m.provider.clone()
+    };
     if matches!(m.provider.as_str(), "claude" | "codex" | "openrouter")
-        && state.store.get_secret(&m.provider)?.is_none()
+        && state.store.get_secret(&credential_slot)?.is_none()
     {
         return Ok("not_logged_in".into());
     }
@@ -298,7 +317,11 @@ pub async fn status(state: &AppState, m: &Model) -> Result<String> {
         .store
         .get_setting(&format!("models:{}", m.provider))?
         .and_then(|s| serde_json::from_str::<Value>(&s).ok());
-    if let Some(ids) = lists.as_ref().and_then(|v| v["modelIds"].as_array()) {
+    if let Some(ids) = lists
+        .as_ref()
+        .and_then(|v| v["modelIds"].as_array())
+        .filter(|_| !api_key_account)
+    {
         let matches = ids.iter().filter_map(Value::as_str).any(|id| {
             if m.provider == "openrouter" {
                 id == m.upstream_model_id
@@ -344,7 +367,7 @@ pub async fn status(state: &AppState, m: &Model) -> Result<String> {
     Ok("ok".into())
 }
 fn fits(m: &Model, v: &Value, estimate: u64) -> bool {
-    let output = v["max_tokens"].as_u64().unwrap_or(0).min(1024);
+    let output = v["max_tokens"].as_u64().unwrap_or(0);
     m.context_window
         .is_none_or(|n| estimate.saturating_add(output) <= n)
         && m.max_prompt_tokens.is_none_or(|n| estimate <= n)
@@ -395,7 +418,7 @@ async fn select(
     request: &SelectionRequest<'_>,
     tried: &HashSet<String>,
     peek: bool,
-) -> Result<Option<(Model, Option<Hold>)>> {
+) -> Result<Option<(Model, Option<Hold>, String)>> {
     let SelectionRequest {
         catalog: c,
         tier,
@@ -405,11 +428,29 @@ async fn select(
         estimate,
     } = *request;
     let _gate = state.runtime.assignment.lock().await;
+    let bound_model = state.config.moe_policy.as_ref().and_then(|p| {
+        p.binding(&state.config, &axum::http::HeaderMap::new())
+            .map(|(_, r)| r.model.clone())
+    });
+    let exact = request.body["_moe_model"]
+        .as_str()
+        .or(bound_model.as_deref());
     let mut pool = Vec::new();
     let mut serving_tier = tier;
-    for candidate_tier in fallback_tiers(tier) {
-        for id in c.tiers.get(*candidate_tier).into_iter().flatten() {
+    for candidate_tier in fallback_tiers(tier)
+        .iter()
+        .take(if state.config.moe_policy.is_some() {
+            1
+        } else {
+            4
+        })
+    {
+        let ids = exact
+            .map(|id| vec![id.to_owned()])
+            .unwrap_or_else(|| c.tiers.get(*candidate_tier).cloned().unwrap_or_default());
+        for id in &ids {
             if let Some(m) = c.models.iter().find(|m| m.id == *id)
+                && exact.is_none_or(|exact| exact == m.id)
                 && !tried.contains(id)
                 && fits(m, v, estimate)
                 && status(state, m).await? == "ok"
@@ -461,7 +502,7 @@ async fn select(
         pool[(state.store.cursor(tier)? % (pool.len() as u64)) as usize].clone()
     };
     if peek {
-        return Ok(Some((chosen, None)));
+        return Ok(Some((chosen, None, serving_tier.into())));
     }
     let new_pin = Pin {
         session_key: key.into(),
@@ -485,14 +526,14 @@ async fn select(
         holds.remove(&(p.model_id, key.into()));
     }
     if chosen.provider != "local" {
-        return Ok(Some((chosen, None)));
+        return Ok(Some((chosen, None, serving_tier.into())));
     }
     let slot = holds
         .entry((chosen.id.clone(), key.into()))
         .or_insert_with(|| std::sync::Arc::new(std::sync::Mutex::new((0, Instant::now()))))
         .clone();
     slot.lock().unwrap_or_else(|e| e.into_inner()).0 += 1;
-    Ok(Some((chosen, Some(Hold { slot }))))
+    Ok(Some((chosen, Some(Hold { slot }), serving_tier.into())))
 }
 
 pub fn record_fault(state: &AppState, model: &Model, fault: &ModelFault) {
@@ -626,7 +667,7 @@ async fn route(
     if body.len() > 32 * 1024 * 1024 {
         return error(413, "request_too_large", "Request body exceeds 32 MB");
     }
-    let v = match crate::systemone::parse_strict(&body) {
+    let mut v = match crate::systemone::parse_strict(&body) {
         Ok(v) if v.is_object() => v,
         _ => {
             let mut r = error(
@@ -651,14 +692,36 @@ async fn route(
             );
         }
     };
-    let (key, client) = session_identity(&headers, &v);
+    // Never let JSON content select or override protected routing fields.
+    v.as_object_mut()
+        .expect("validated object")
+        .remove("_moe_model");
+    let binding = state
+        .config
+        .moe_policy
+        .as_ref()
+        .and_then(|p| p.binding(&state.config, &headers));
+    if state.config.moe_policy.is_some() && binding.is_none() {
+        return error(403, "permission_error", "Moe binding required");
+    }
+    if let Some((_, route)) = binding {
+        v["_moe_model"] = json!(route.model);
+    }
+    let (key, mut client) = session_identity(&headers, &v);
+    if let Some((run, _)) = binding {
+        client = Some(run.into());
+    }
+    let request_id = headers
+        .get("x-moe-request-id")
+        .and_then(|h| h.to_str().ok())
+        .map(str::to_owned)
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let estimate = estimate_tokens(&v);
     let streaming = v["stream"] == true;
-    let started = Instant::now();
     let mut tried = HashSet::new();
     let mut only_overflow = true;
     let mut overflow = None;
-    let mut last = None;
+
     loop {
         let selected = match select(
             &state,
@@ -678,11 +741,29 @@ async fn route(
             Ok(s) => s,
             Err(_) => return error(500, "api_error", "Could not assign a model"),
         };
-        let Some((m, hold)) = selected else { break };
+        let Some((m, hold, selected_tier)) = selected else {
+            break;
+        };
         tried.insert(m.id.clone());
-        last = Some(m.clone());
-        let u = Usage {
+        let attempt_started = Instant::now();
+        let mut u = Usage {
             at: now(),
+            attempt_id: Some(uuid::Uuid::new_v4().to_string()),
+            request_id: Some(request_id.clone()),
+            account: Some(
+                binding
+                    .map(|(_, r)| r.account.as_str())
+                    .unwrap_or(if m.provider == "local" {
+                        "local_lease"
+                    } else {
+                        "subscription"
+                    })
+                    .into(),
+            ),
+            approval_profile: binding.map(|(_, r)| r.profile.clone()),
+            selected_tier: Some(selected_tier),
+            outcome: Some("uncertain".into()),
+            cost_source: Some("unknown".into()),
             client_session_id: client.clone(),
             model_id: m.id.clone(),
             provider: m.provider.clone(),
@@ -695,12 +776,31 @@ async fn route(
             is_streaming: Some(streaming),
             ..Default::default()
         };
+        if !count {
+            u.id = match state.store.record_usage(&u) {
+                Ok(id) => id,
+                Err(_) => {
+                    return error(
+                        500,
+                        "api_error",
+                        "Attempt intent could not be persisted; no dispatch",
+                    );
+                }
+            };
+        }
         let mut pending = Pending {
             state: state.clone(),
             usage: if count { None } else { Some(u) },
-            started,
+            started: attempt_started,
             hold,
         };
+        if count && state.config.moe_policy.is_some() {
+            return error(
+                400,
+                "invalid_request_error",
+                "Moe does not expose estimated token counts as a fit guarantee",
+            );
+        }
         let result = providers::send_with_headers_and_query(
             &state,
             &m,
@@ -727,11 +827,48 @@ async fn route(
                 }
                 let mut u = row.expect("usage exists for a Messages request");
                 u.status = response.status().as_u16();
-                return tap_response(state, response, m, u, started, pending.hold.take());
+                if let Some((_, route)) = binding {
+                    for (name, value) in [
+                        ("x-moe-provider", route.provider.as_str()),
+                        ("x-moe-account", route.account.as_str()),
+                        ("x-moe-profile", route.profile.as_str()),
+                        ("x-moe-model", m.id.as_str()),
+                        ("x-moe-fallback", "off"),
+                        ("x-moe-attempt-id", u.attempt_id.as_deref().unwrap_or("")),
+                        ("x-moe-request-id", &request_id),
+                    ] {
+                        let Ok(value) = value.parse() else {
+                            return error(500, "api_error", "Invalid administrative route label");
+                        };
+                        response
+                            .headers_mut()
+                            .insert(axum::http::HeaderName::from_static(name), value);
+                    }
+                }
+                return tap_response(
+                    state.clone(),
+                    response,
+                    m,
+                    u,
+                    attempt_started,
+                    pending.hold.take(),
+                );
             }
             Err(f) => {
                 pending.hold.take();
                 record_fault(&state, &m, &f);
+                if let Some(mut row) = row {
+                    row.status = 502;
+                    row.outcome = Some("failed".into());
+                    row.failure_kind = Some(f.kind.clone());
+                    row.failure_detail =
+                        Some("Upstream attempt failed; provider text withheld".into());
+                    row.latency_ms = attempt_started.elapsed().as_millis() as u64;
+                    // A precommit fault has unobserved token usage and cost, never zero cost.
+                    if state.store.settle_usage(&row).is_err() {
+                        return error(500, "api_error", "Attempt settlement failed");
+                    }
+                }
                 only_overflow &= f.kind == "context_overflow";
                 if f.kind == "context_overflow" {
                     overflow = f.message.or(Some("prompt is too long".into()))
@@ -755,37 +892,7 @@ async fn route(
     response
         .headers_mut()
         .insert("x-weave-model-class", tier.parse().unwrap());
-    if !count && let Some(m) = last {
-        let mut u = Usage {
-            at: now(),
-            client_session_id: client,
-            model_id: m.id.clone(),
-            provider: m.provider.clone(),
-            tier: Some(tier),
-            status: response.status().as_u16(),
-            latency_ms: started.elapsed().as_millis() as u64,
-            session_key: Some(key),
-            upstream_model_id: Some(m.upstream_model_id.clone()),
-            is_streaming: Some(streaming),
-            outcome: Some("failed".into()),
-            failure_kind: Some(
-                if only_overflow {
-                    "context_overflow"
-                } else {
-                    "tier_exhausted"
-                }
-                .into(),
-            ),
-            ..Default::default()
-        };
-        price_usage(&mut u, &c, &m, None);
-        u.failure_detail = u
-            .failure_kind
-            .as_deref()
-            .and_then(explanation)
-            .map(str::to_owned);
-        let _ = state.store.record_usage(&u);
-    }
+
     response
 }
 async fn exhausted(
@@ -876,7 +983,7 @@ impl Drop for Pending {
                 price_usage(&mut u, &c, m, None)
             }
             u.latency_ms = self.started.elapsed().as_millis() as u64;
-            let _ = self.state.store.record_usage(&u);
+            let _ = self.state.store.settle_usage(&u);
         }
     }
 }
@@ -1025,7 +1132,11 @@ impl Tap {
         }
     }
     fn metadata(&mut self, v: &Value) {
-        if let Some(s) = v["resolved_model"].as_str() {
+        if let Some(s) = v["resolved_model"].as_str().or_else(|| {
+            v["model"]
+                .as_str()
+                .filter(|_| self.model.provider == "claude")
+        }) {
             self.usage.resolved_model_id = Some(s.into());
         }
         if let Some(s) = v["generation_id"].as_str() {
@@ -1033,6 +1144,12 @@ impl Tap {
         }
     }
     fn tokens(&mut self, v: &Value) {
+        if v["_estimated"] != true
+            && (v.get("input_tokens").and_then(Value::as_u64).is_some()
+                || v.get("output_tokens").and_then(Value::as_u64).is_some())
+        {
+            self.usage.usage_known = true;
+        }
         macro_rules! read {
             ($field:ident,$key:literal) => {
                 if let Some(n) = v[$key].as_u64().filter(|n| *n <= i64::MAX as u64) {
@@ -1144,7 +1261,7 @@ impl Drop for Tap {
         if let Ok(catalog) = self.state.store.catalog() {
             price_usage(&mut self.usage, &catalog, &self.model, self.reported_cost);
         }
-        if self.state.store.record_usage(&self.usage).is_err() {
+        if self.state.store.settle_usage(&self.usage).is_err() {
             tracing::warn!("Could not persist request usage");
         }
         self.hold.take();
@@ -1387,6 +1504,10 @@ fn is_auto(id: &str) -> bool {
     ["openrouter/auto", "openrouter/auto-beta"].contains(&id)
 }
 fn price_usage(u: &mut Usage, c: &Catalog, m: &Model, reported: Option<f64>) {
+    if !u.usage_known {
+        u.cost_source = Some("unknown".into());
+        return;
+    }
     if let Some(cost) = reported {
         u.cost_usd_micros = crate::pricing::reported(cost);
         u.cost_source = Some("reported".into());
@@ -1505,6 +1626,14 @@ fn validate_openrouter(v: &Value) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Complete per-run ledger, including failed and unsettled attempts. No prompts or secrets.
+pub async fn session_attempts(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    match state.store.session_usages(&id) {
+        Ok(rows) => Json(json!({"run_id": id, "attempts": rows})).into_response(),
+        Err(_) => error(500, "api_error", "Usage unavailable"),
+    }
 }
 
 #[cfg(test)]
@@ -1654,6 +1783,7 @@ mod diagnostic_tests {
             },
         );
         let mut u = Usage {
+            usage_known: true,
             input_tokens: 10,
             output_tokens: 5,
             ..Default::default()

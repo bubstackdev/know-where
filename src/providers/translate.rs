@@ -489,8 +489,7 @@ pub fn tool_id(id: &str) -> String {
 }
 pub fn usage(v: &Value, estimated: u64, openrouter: bool) -> Value {
     let input = v["prompt_tokens"].as_u64().unwrap_or(estimated);
-    let mut out =
-        json!({"input_tokens":input,"output_tokens":v["completion_tokens"].as_u64().unwrap_or(0)});
+    let mut out = json!({"input_tokens":input,"output_tokens":v["completion_tokens"].as_u64().unwrap_or(0),"_estimated":!(v["prompt_tokens"].is_u64() && v["completion_tokens"].is_u64())});
     if openrouter {
         let cached = v
             .pointer("/prompt_tokens_details/cached_tokens")

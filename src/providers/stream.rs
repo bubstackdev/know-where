@@ -264,7 +264,7 @@ impl Translator {
             blocks: BTreeMap::new(),
             order: vec![],
             ended: false,
-            usage: json!({"input_tokens":estimated,"output_tokens":0}),
+            usage: json!({"input_tokens":estimated,"output_tokens":0,"_estimated":true}),
             stop: "end_turn".into(),
             actual_model: None,
             generation: None,
@@ -278,7 +278,7 @@ impl Translator {
         }
     }
     fn start(&self) -> Value {
-        json!({"type":"message_start","message":{"id":self.id,"type":"message","role":"assistant","model":self.model,"content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":self.estimated,"output_tokens":0}}})
+        json!({"type":"message_start","message":{"id":self.id,"type":"message","role":"assistant","model":self.model,"content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":self.estimated,"output_tokens":0,"_estimated":true}}})
     }
     fn block(
         &mut self,
@@ -445,6 +445,12 @@ impl Translator {
             return Err(f);
         }
         if self.codex {
+            if let Some(model) = v["response"]["model"].as_str() {
+                self.actual_model = Some(json!(model));
+            }
+            if let Some(id) = v["response"]["id"].as_str() {
+                self.generation = Some(json!(id));
+            }
             let typ = v["type"].as_str().unwrap_or("");
             let key = format!("item:{}", v["output_index"].as_u64().unwrap_or(0));
             match typ {
@@ -521,6 +527,10 @@ impl Translator {
                         };
                     }
                     self.usage = json!({"input_tokens":r["usage"]["input_tokens"].as_u64().unwrap_or(self.estimated),"output_tokens":r["usage"]["output_tokens"].as_u64().unwrap_or(0),"cache_read_input_tokens":r["usage"]["input_tokens_details"]["cached_tokens"].as_u64().unwrap_or(0)});
+                    self.usage["_estimated"] = json!(
+                        !(r["usage"]["input_tokens"].is_u64()
+                            && r["usage"]["output_tokens"].is_u64())
+                    );
                     let cached = self.usage["cache_read_input_tokens"].as_u64().unwrap_or(0);
                     self.usage["input_tokens"] = json!(
                         self.usage["input_tokens"]

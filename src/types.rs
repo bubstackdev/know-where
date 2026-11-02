@@ -93,6 +93,12 @@ pub struct Cooldown {
 #[serde(default, rename_all = "camelCase")]
 pub struct Usage {
     pub id: i64,
+    pub attempt_id: Option<String>,
+    pub request_id: Option<String>,
+    pub account: Option<String>,
+    pub approval_profile: Option<String>,
+    pub selected_tier: Option<String>,
+    pub usage_known: bool,
     pub at: i64,
     pub client_session_id: Option<String>,
     pub model_id: String,

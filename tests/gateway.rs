@@ -216,7 +216,10 @@ async fn limited_model_fails_over_and_stays_cooled() {
     assert!(cd[0].until >= now() + 119);
     assert_eq!(s.store.pins().unwrap()[0].model_id, "b");
     let rows = s.store.usages(10, None).unwrap();
-    assert_eq!(rows.len(), 1);
+    assert_eq!(rows.len(), 2, "every upstream attempt must have a row");
+    assert_eq!(rows[1].model_id, "limit");
+    assert_eq!(rows[1].outcome.as_deref(), Some("failed"));
+    assert_eq!(rows[1].cost_source.as_deref(), Some("unknown"));
     assert_eq!(rows[0].model_id, "b");
     assert_eq!(rows[0].outcome.as_deref(), Some("completed"));
 }
@@ -254,7 +257,7 @@ async fn exhausted_tiers_descend_in_order_and_do_not_retry_shared_models() {
         );
     }
     let rows = s.store.usages(10, None).unwrap();
-    assert_eq!(rows.len(), 1);
+    assert_eq!(rows.len(), 3);
     assert_eq!(rows[0].tier.as_deref(), Some("high"));
     assert_eq!(rows[0].model_id, "low");
     assert_eq!(s.store.pins().unwrap()[0].tier, "high");
@@ -360,7 +363,7 @@ async fn cross_tier_streaming_retries_only_before_output_is_committed() {
         assert_eq!(body.contains("event: message_stop"), !failed);
         assert_eq!(u.fake.calls.lock().unwrap().len(), expected_calls);
         let rows = s.store.usages(10, None).unwrap();
-        assert_eq!(rows.len(), 1);
+        assert_eq!(rows.len(), expected_calls);
         assert_eq!(rows[0].model_id, if failed { model } else { "mid" });
     }
 }
@@ -812,4 +815,280 @@ async fn setup_price_cap_is_sent_on_every_openrouter_request() {
         }
     }
     assert_eq!(u.fake.calls.lock().unwrap().len(), 24);
+}
+
+fn moe(s: &mut AppState, model: &str, provider: &str, account: &str, cap: Option<usize>) {
+    s.config.moe_policy = Some(knowwhere::moe::Policy {
+        routes: vec![knowwhere::moe::Route {
+            model: model.into(),
+            upstream_model: model.into(),
+            provider: provider.into(),
+            account: account.into(),
+            profile: "tc-enterprise".into(),
+        }],
+        max_in_flight: cap,
+    });
+}
+fn moe_request(s: &AppState) -> Request<Body> {
+    let mut r = request(s, "/v1/messages", Some(message()));
+    r.headers_mut()
+        .insert("x-moe-run-id", "run-1".parse().unwrap());
+    r.headers_mut().insert(
+        "x-moe-model",
+        s.config.moe_policy.as_ref().unwrap().routes[0]
+            .model
+            .parse()
+            .unwrap(),
+    );
+    r
+}
+#[tokio::test]
+async fn moe_binding_is_required_and_account_and_catalog_provider_cannot_escape_policy() {
+    let u = upstream().await;
+    let (_dir, mut s) = setup(&u.base, &["a", "b"]);
+    moe(&mut s, "a", "local", "local_lease", None);
+    let r = knowwhere::app(s.clone())
+        .oneshot(request(&s, "/v1/messages", Some(message())))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+    let mut r = moe_request(&s);
+    r.headers_mut()
+        .insert("x-moe-account", "api_key".parse().unwrap());
+    assert_eq!(
+        knowwhere::app(s.clone()).oneshot(r).await.unwrap().status(),
+        403
+    );
+    let mut changed = s.store.catalog().unwrap();
+    changed.models[0].upstream_model_id = "unapproved-model".into();
+    s.store.save_catalog(&changed).unwrap();
+    assert_eq!(
+        knowwhere::app(s.clone())
+            .oneshot(moe_request(&s))
+            .await
+            .unwrap()
+            .status(),
+        429
+    );
+    changed.models[0].upstream_model_id = "a".into();
+    s.store.save_catalog(&changed).unwrap();
+    let mut c = s.store.catalog().unwrap();
+    c.models[0].provider = "openrouter".into();
+    s.store.save_catalog(&c).unwrap();
+    assert_eq!(
+        knowwhere::app(s.clone())
+            .oneshot(moe_request(&s))
+            .await
+            .unwrap()
+            .status(),
+        429
+    );
+    assert!(u.fake.calls.lock().unwrap().is_empty());
+    assert!(s.store.usages(10, None).unwrap().is_empty());
+}
+#[tokio::test]
+async fn moe_never_falls_back_and_ledger_retains_failed_attempt_across_restart() {
+    let u = upstream().await;
+    let (dir, mut s) = setup(&u.base, &["limit", "b"]);
+    moe(&mut s, "limit", "local", "local_lease", None);
+    let r = knowwhere::app(s.clone())
+        .oneshot(moe_request(&s))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 429);
+    assert_eq!(u.fake.calls.lock().unwrap().len(), 1);
+    let reopened = knowwhere::Store::open(&dir.path().join("knowwhere.db")).unwrap();
+    let rows = reopened.session_usages("run-1").unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].model_id, "limit");
+    assert_eq!(rows[0].account.as_deref(), Some("local_lease"));
+    assert_eq!(rows[0].approval_profile.as_deref(), Some("tc-enterprise"));
+    assert_eq!(rows[0].cost_source.as_deref(), Some("unknown"));
+    assert_eq!(rows[0].failure_kind.as_deref(), Some("limited"));
+    assert!(rows[0].attempt_id.is_some());
+    let r = knowwhere::app(s.clone())
+        .oneshot(request(&s, "/v1/sessions/run-1/attempts", None))
+        .await
+        .unwrap();
+    assert_eq!(json_body(r).await["attempts"][0]["modelId"], "limit");
+}
+#[tokio::test]
+async fn moe_hard_cap_is_held_until_response_body_drops_even_for_same_session() {
+    let u = upstream().await;
+    let (_dir, mut s) = setup(&u.base, &["a"]);
+    moe(&mut s, "a", "local", "local_lease", Some(1));
+    let r = knowwhere::app(s.clone())
+        .oneshot(moe_request(&s))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(
+        s.store.usages(10, None).unwrap()[0].outcome.as_deref(),
+        Some("uncertain")
+    );
+    assert_eq!(
+        knowwhere::app(s.clone())
+            .oneshot(moe_request(&s))
+            .await
+            .unwrap()
+            .status(),
+        429
+    );
+    drop(r);
+    let r = knowwhere::app(s.clone())
+        .oneshot(moe_request(&s))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(r.headers()["x-moe-fallback"], "off");
+    assert_eq!(json_body(r).await["resolved_model"], "a");
+    assert_eq!(u.fake.calls.lock().unwrap().len(), 2);
+}
+#[tokio::test]
+async fn moe_uses_native_enterprise_api_keys_for_claude_and_openai() {
+    let router = Router::new().route("/v1/messages", post(|h: HeaderMap, Json(v): Json<Value>| async move {
+        assert_eq!(h["x-api-key"], "synthetic-key");
+        assert!(!h.contains_key("authorization"));
+        assert!(!h.contains_key("anthropic-beta"));
+        assert_eq!(v["max_tokens"], 1024);
+        assert!(v.get("_moe_model").is_none());
+        Json(json!({"type":"message","model":"actual-claude","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":7,"output_tokens":3}}))
+    })).route("/v1/responses", post(|h: HeaderMap, Json(v): Json<Value>| async move {
+        assert_eq!(h["authorization"], "Bearer synthetic-key");
+        assert!(!h.contains_key("chatgpt-account-id"));
+        assert_eq!(v["max_output_tokens"], 1024);
+        assert_eq!(v["store"], false);
+        let r = json!({"id":"r","model":"actual-openai","status":"completed","output":[{"type":"message","id":"m","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":7,"output_tokens":3}});
+        ([("content-type", "text/event-stream")], format!("data: {{\"type\":\"response.completed\",\"response\":{r}}}\n\n"))
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    for (provider, actual) in [("claude", "actual-claude"), ("codex", "actual-openai")] {
+        let (_dir, mut s) = setup(&base, &["api"]);
+        let mut c = s.store.catalog().unwrap();
+        c.models[0].provider = provider.into();
+        s.store.save_catalog(&c).unwrap();
+        s.config.claude_api_base = base.clone();
+        s.config.openai_api_base = format!("{base}/v1");
+        s.store.set_secret("model:api", "synthetic-key").unwrap();
+        moe(&mut s, "api", provider, "api_key", None);
+        let r = knowwhere::app(s.clone())
+            .oneshot(moe_request(&s))
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        let v = json_body(r).await;
+        assert_eq!(v["content"][0]["text"], "ok");
+        let rows = s.store.session_usages("run-1").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].resolved_model_id.as_deref(), Some(actual));
+        assert_eq!(rows[0].cost_usd_micros, 26);
+        assert_eq!(rows[0].cost_source.as_deref(), Some("estimated"));
+    }
+    task.abort();
+}
+#[test]
+fn moe_startup_rejects_nonloopback_and_invalid_routes_before_creating_data() {
+    for provider in ["openrouter", "systemone", "claude"] {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        let mut config = Config {
+            data_dir: data.clone(),
+            ..Default::default()
+        };
+        config.moe_policy = Some(knowwhere::moe::Policy {
+            routes: vec![knowwhere::moe::Route {
+                model: "a".into(),
+                upstream_model: "a".into(),
+                provider: provider.into(),
+                account: "api_key".into(),
+                profile: "tc".into(),
+            }],
+            max_in_flight: Some(1),
+        });
+        if provider == "claude" {
+            config.listen_address = "0.0.0.0".parse().unwrap();
+        }
+        assert!(AppState::open(config).is_err());
+        assert!(!data.exists());
+    }
+}
+
+#[tokio::test]
+async fn moe_fixed_launcher_binding_cannot_be_overridden_or_redirected_from_json() {
+    let u = upstream().await;
+    let (_dir, mut s) = setup(&u.base, &["a", "b"]);
+    moe(&mut s, "a", "local", "local_lease", None);
+    s.config.moe_run_id = Some("fixed-run".into());
+    s.config.moe_model = Some("a".into());
+    assert_eq!(
+        knowwhere::app(s.clone())
+            .oneshot(moe_request(&s))
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    let mut body = message();
+    body["_moe_model"] = json!("b");
+    let r = knowwhere::app(s.clone())
+        .oneshot(request(&s, "/v1/messages", Some(body)))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(json_body(r).await["resolved_model"], "a");
+    assert_eq!(s.store.session_usages("fixed-run").unwrap().len(), 1);
+    assert_eq!(u.fake.calls.lock().unwrap()[0]["model"], "a");
+}
+#[tokio::test]
+async fn moe_subscription_transport_uses_only_the_owned_oauth_slot_and_records_profile() {
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let count = calls.clone();
+    let router = Router::new().route(
+        "/v1/messages",
+        post(move |h: HeaderMap| {
+            let count = count.clone();
+            async move {
+                count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                assert_eq!(h["authorization"], "Bearer synthetic-oauth");
+                assert!(
+                    h["anthropic-beta"]
+                        .to_str()
+                        .unwrap()
+                        .contains("oauth-2025-04-20")
+                );
+                assert!(!h.contains_key("x-api-key"));
+                (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({"error":{"type":"authentication_error"}})),
+                )
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let (_dir, mut s) = setup(&base, &["sub"]);
+    let mut c = s.store.catalog().unwrap();
+    c.models[0].provider = "claude".into();
+    s.store.save_catalog(&c).unwrap();
+    moe(&mut s, "sub", "claude", "subscription", None);
+    s.config.claude_api_base = base;
+    s.store.set_secret("claude", &json!({"access_token":"synthetic-oauth","refresh_token":"synthetic-refresh","expires_at":chrono::Utc::now().timestamp()+600,"account_id":null}).to_string()).unwrap();
+    let r = knowwhere::app(s.clone())
+        .oneshot(moe_request(&s))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 429);
+    assert_eq!(
+        calls.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "401 must not secretly retry"
+    );
+    let rows = s.store.session_usages("run-1").unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].account.as_deref(), Some("subscription"));
+    assert_eq!(rows[0].failure_kind.as_deref(), Some("auth_rejected"));
+    task.abort();
 }

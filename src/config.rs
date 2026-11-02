@@ -3,6 +3,10 @@ use std::{net::IpAddr, path::PathBuf, time::Duration};
 #[derive(Clone, Debug)]
 pub struct Config {
     pub data_dir: PathBuf,
+    pub moe_policy: Option<crate::moe::Policy>,
+    pub moe_run_id: Option<String>,
+    pub moe_model: Option<String>,
+    pub openai_api_base: String,
     pub seed_file: Option<PathBuf>,
     pub seed_override_file: Option<PathBuf>,
     pub listen_address: IpAddr,
@@ -45,9 +49,13 @@ impl Default for Config {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join(".knowwhere"),
+            moe_policy: None,
+            moe_run_id: None,
+            moe_model: None,
+            openai_api_base: "https://api.openai.com/v1".into(),
             seed_file: None,
             seed_override_file: None,
-            listen_address: "0.0.0.0".parse().unwrap(),
+            listen_address: "127.0.0.1".parse().unwrap(),
             port: 8790,
             https_port: 8791,
             certificate_path: None,
@@ -134,6 +142,12 @@ impl Config {
         let normalized = normalize_key(key);
         match normalized.as_str() {
             "datadirectory" | "datadir" => self.data_dir = v.into(),
+            "moepolicy" => {
+                self.moe_policy = Some(serde_json::from_str(&std::fs::read_to_string(v)?)?)
+            }
+            "moerunid" => self.moe_run_id = Some(v.into()),
+            "moemodel" => self.moe_model = Some(v.into()),
+            "openaiapibaseurl" => self.openai_api_base = v.into(),
             "seedfile" => self.seed_file = Some(v.into()),
             "seedoverridefile" => self.seed_override_file = Some(v.into()),
             "listenaddress" => {

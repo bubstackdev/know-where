@@ -197,23 +197,87 @@ pub async fn send_with_headers_and_query(
     query: Option<&str>,
 ) -> Result<Attempt, ModelFault> {
     let provider = model.provider.as_str();
+    if state
+        .config
+        .moe_policy
+        .as_ref()
+        .is_some_and(|p| p.route(model).is_none())
+    {
+        return Err(ModelFault::new(
+            "auth_rejected",
+            "Provider/model/account is outside Moe policy",
+        ));
+    }
+    let api_key_account = state
+        .config
+        .moe_policy
+        .as_ref()
+        .and_then(|p| p.route(model))
+        .is_some_and(|r| r.account == "api_key");
     if count_tokens && provider != "claude" {
         return Ok(ok(json!({"input_tokens":estimated_tokens})));
     }
     let streaming = request["stream"].as_bool().unwrap_or(false);
-    let body = match provider {
+    let requested_output = request["max_tokens"].clone();
+    let mut body = match provider {
         "claude" => {
-            translate::prepare_claude(&mut request, &model.upstream_model_id, !count_tokens);
+            request.as_object_mut().map(|v| v.remove("_moe_model"));
+            translate::prepare_claude(
+                &mut request,
+                &model.upstream_model_id,
+                !count_tokens && !api_key_account,
+            );
             request
         }
         "codex" => responses_request(&request, model, session_key),
         "local" | "openrouter" => chat_request(&request, model, estimated_tokens, session_key),
         _ => return Err(ModelFault::new("unreachable", "Unsupported provider")),
     };
+    if api_key_account && provider == "codex" {
+        body["max_output_tokens"] = requested_output;
+    }
     let mut refresh = false;
     let mut rejected_token: Option<String> = None;
     let response = loop {
         let mut builder = match provider {
+            "claude" if api_key_account => {
+                let key = state
+                    .store
+                    .get_secret(&format!("model:{}", model.id))
+                    .ok()
+                    .flatten()
+                    .filter(|k| !k.trim().is_empty())
+                    .ok_or_else(|| {
+                        ModelFault::new("auth_rejected", "Approved API key is unavailable")
+                    })?;
+                state
+                    .client
+                    .post(format!(
+                        "{}/v1/messages{}",
+                        state.config.claude_api_base.trim_end_matches('/'),
+                        if count_tokens { "/count_tokens" } else { "" }
+                    ))
+                    .header("x-api-key", key)
+                    .header("anthropic-version", "2023-06-01")
+            }
+            "codex" if api_key_account => {
+                let key = state
+                    .store
+                    .get_secret(&format!("model:{}", model.id))
+                    .ok()
+                    .flatten()
+                    .filter(|k| !k.trim().is_empty())
+                    .ok_or_else(|| {
+                        ModelFault::new("auth_rejected", "Approved API key is unavailable")
+                    })?;
+                state
+                    .client
+                    .post(format!(
+                        "{}/responses",
+                        state.config.openai_api_base.trim_end_matches('/')
+                    ))
+                    .bearer_auth(key)
+            }
             "claude" => {
                 let token = match if refresh {
                     oauth::access_rejected(state, "claude", rejected_token.as_deref().unwrap_or(""))
@@ -348,8 +412,30 @@ pub async fn send_with_headers_and_query(
         };
         if response.status().as_u16() == 401
             && !refresh
+            && state.config.moe_policy.is_none()
             && (provider == "claude" || provider == "codex")
         {
+            let (_, client) = crate::routing::session_identity(inbound, &body);
+            let row = crate::types::Usage {
+                at: crate::types::now(),
+                client_session_id: client,
+                model_id: model.id.clone(),
+                provider: provider.into(),
+                attempt_id: Some(uuid::Uuid::new_v4().to_string()),
+                session_key: Some(session_key.into()),
+                upstream_model_id: Some(model.upstream_model_id.clone()),
+                status: 401,
+                outcome: Some("failed".into()),
+                failure_kind: Some("auth_rejected".into()),
+                cost_source: Some("unknown".into()),
+                ..Default::default()
+            };
+            state.store.record_usage(&row).map_err(|_| {
+                ModelFault::new(
+                    "unreachable",
+                    "Could not persist rejected authentication attempt",
+                )
+            })?;
             refresh = true;
             continue;
         }
@@ -601,10 +687,27 @@ pub async fn send_with_headers_and_query(
 
 /// Refresh provider model lists and OpenRouter metadata.
 pub async fn refresh(state: &AppState) -> anyhow::Result<Value> {
-    discovery::refresh_selected(state, &["claude", "codex", "openrouter"]).await
+    let providers = ["claude", "codex", "openrouter"]
+        .into_iter()
+        .filter(|provider| {
+            state.config.moe_policy.as_ref().is_none_or(|p| {
+                p.routes
+                    .iter()
+                    .any(|r| r.provider == *provider && r.account == "subscription")
+            })
+        })
+        .collect::<Vec<_>>();
+    discovery::refresh_selected(state, &providers).await
 }
 
 pub async fn refresh_provider(state: &AppState, provider: &str) -> anyhow::Result<Value> {
+    if state.config.moe_policy.as_ref().is_some_and(|p| {
+        !p.routes
+            .iter()
+            .any(|r| r.provider == provider && r.account == "subscription")
+    }) {
+        anyhow::bail!("Provider discovery is outside Moe policy");
+    }
     if !["claude", "codex", "openrouter"].contains(&provider) {
         anyhow::bail!("Unknown provider");
     }
