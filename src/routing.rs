@@ -1504,13 +1504,12 @@ fn is_auto(id: &str) -> bool {
     ["openrouter/auto", "openrouter/auto-beta"].contains(&id)
 }
 fn price_usage(u: &mut Usage, c: &Catalog, m: &Model, reported: Option<f64>) {
-    if !u.usage_known {
-        u.cost_source = Some("unknown".into());
-        return;
-    }
     if let Some(cost) = reported {
         u.cost_usd_micros = crate::pricing::reported(cost);
         u.cost_source = Some("reported".into());
+    } else if !u.usage_known {
+        u.cost_source = Some("unknown".into());
+        return;
     } else {
         let price_id = if m.provider == "openrouter" {
             match u.resolved_model_id.as_deref() {
@@ -1760,6 +1759,16 @@ mod diagnostic_tests {
             let u = observe(body.as_bytes().into(), false, 8, 200).await;
             assert_eq!(u.failure_kind.as_deref(), Some("malformed_response"));
         }
+    }
+    #[test]
+    fn reported_cost_does_not_require_observed_token_counts() {
+        let c: Catalog = serde_json::from_str(include_str!("../seed.json")).unwrap();
+        let model = c.models.iter().find(|m| m.provider == "local").unwrap();
+        let mut usage = Usage::default();
+        price_usage(&mut usage, &c, model, Some(0.000123));
+        assert_eq!(usage.cost_source.as_deref(), Some("reported"));
+        assert_eq!(usage.cost_usd_micros, 123);
+        assert!(!usage.usage_known);
     }
     #[test]
     fn auto_router_prices_configured_resolved_entry_or_reports_unknown() {

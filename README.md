@@ -208,7 +208,8 @@ retries after a 401. Token-count estimates are not exposed as fit guarantees in
 Moe mode. This gateway does not acquire a GPU lease or launch model servers; its
 local consumer must do that through Moe execution before using a local route.
 
-`max_in_flight` is an optional hard cap across sessions; zero is invalid. A saturated
+`max_in_flight` is an optional hard cap across sessions in one gateway process;
+zero is invalid. Separate launcher processes have separate caps. A saturated
 request is rejected before upstream dispatch. The slot lasts until the response
 body completes or drops. This is request admission, not a physical memory cap.
 
