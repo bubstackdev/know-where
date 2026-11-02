@@ -221,3 +221,8 @@ marked explicitly, and rows left uncertain after restart must be reconciled befo
 replay. The existing cost endpoint's count now counts attempts. No prompt, answer,
 credential or upstream failure message is added to the ledger. In ordinary mode,
 fallback still works and retains a separate failure row for each attempt.
+
+A noninteractive `run` normally puts the harness in its own process group so its
+tools can be cleaned up together. A supervisor that already owns a process group and
+cancels by signalling it (Moe does) sets `KNOWWHERE_INHERIT_PROCESS_GROUP=1`, which
+keeps the harness and its tools inside the supervisor's group.

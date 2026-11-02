@@ -275,6 +275,64 @@ wait
         }
     }
     #[test]
+    fn inherited_process_group_keeps_the_harness_in_the_supervisor_group() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("data");
+        setup(&data, "vendor/model");
+        harness(
+            &temp.path().join("claude"),
+            r#"
+/bin/ps -o pgid= -p $$ | tr -d ' ' > "$FIXTURE_PGID"
+"#,
+        );
+        let pgid_file = temp.path().join("pgid");
+        let run = |inherit: bool| {
+            let mut cmd = command(&data);
+            cmd.env("PATH", format!("{}:/bin:/usr/bin", temp.path().display()))
+                .env("FIXTURE_PGID", &pgid_file)
+                .args(["run", "claude"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            if inherit {
+                cmd.env("KNOWWHERE_INHERIT_PROCESS_GROUP", "1");
+            }
+            // The launcher leads its own group here, standing in for a supervisor.
+            std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+            let child = cmd.spawn().unwrap();
+            let launcher = child.id().to_string();
+            let status = cmd_wait(child);
+            assert!(status.success());
+            (
+                launcher,
+                std::fs::read_to_string(&pgid_file)
+                    .unwrap()
+                    .trim()
+                    .to_owned(),
+            )
+        };
+        let (launcher, pgid) = run(true);
+        assert_eq!(pgid, launcher, "harness stays in the supervisor's group");
+        let (launcher, pgid) = run(false);
+        assert_ne!(
+            pgid, launcher,
+            "by default a noninteractive harness gets its own group"
+        );
+    }
+    fn cmd_wait(mut child: std::process::Child) -> std::process::ExitStatus {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                return status;
+            }
+            if Instant::now() > deadline {
+                let _ = child.kill();
+                panic!("launcher did not exit");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+    #[test]
     fn interactive_ctrl_c_leaves_a_cancelled_harness_and_gateway_running() {
         use std::{
             fs::File,
