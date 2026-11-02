@@ -348,6 +348,21 @@ impl Store {
         )?;
         Ok(db.last_insert_rowid())
     }
+    /// Finish the already-durable dispatch row instead of inventing another call.
+    pub fn settle_usage(&self, usage: &Usage) -> Result<()> {
+        if usage.id == 0 {
+            self.record_usage(usage)?;
+            return Ok(());
+        }
+        let changed = self.db()?.execute(
+            "UPDATE usages SET body=?2 WHERE id=?1",
+            params![usage.id, serde_json::to_string(usage)?],
+        )?;
+        if changed != 1 {
+            bail!("Attempt ledger row is missing")
+        }
+        Ok(())
+    }
     pub fn usages(&self, limit: usize, before: Option<i64>) -> Result<Vec<Usage>> {
         let db = self.db()?;
         let mut s = db.prepare(

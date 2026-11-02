@@ -50,6 +50,10 @@ fn validate_model(model: &str) -> Result<()> {
     Ok(())
 }
 pub fn setup(state: &AppState, model: Option<String>) -> Result<()> {
+    ensure!(
+        state.config.moe_policy.is_none(),
+        "OpenRouter setup is outside Moe policy"
+    );
     let model = model.unwrap_or_else(|| "openrouter/auto".into());
     let key = match std::env::var("OPENROUTER_API_KEY") {
         Ok(key) if !key.trim().is_empty() => key.trim().to_owned(),
@@ -356,6 +360,14 @@ fn command(harness: &str, args: &[String], base: &str, key: &str) -> Result<Harn
 pub async fn run(mut state: AppState, args: &[String]) -> Result<i32> {
     validate_run(args)?;
     let harness = &args[0];
+    if let Some(policy) = &state.config.moe_policy {
+        ensure!(
+            policy
+                .binding(&state.config, &axum::http::HeaderMap::new())
+                .is_some(),
+            "Moe launcher requires --moe-run-id and --moe-model"
+        );
+    }
     let catalog = state.store.catalog()?;
     let mut ready = false;
     for model in catalog
@@ -366,7 +378,19 @@ pub async fn run(mut state: AppState, args: &[String]) -> Result<i32> {
         ready |= match model.provider.as_str() {
             "local" => true,
             "claude" | "codex" | "openrouter" => {
-                state.store.get_secret(&model.provider)?.is_some()
+                state
+                    .config
+                    .moe_policy
+                    .as_ref()
+                    .and_then(|p| p.route(model))
+                    .is_some_and(|r| {
+                        r.account == "api_key"
+                            && state
+                                .store
+                                .get_secret(&format!("model:{}", model.id))
+                                .is_ok_and(|s| s.is_some())
+                    })
+                    || state.store.get_secret(&model.provider)?.is_some()
                     || (model.provider == "openrouter"
                         && state
                             .store

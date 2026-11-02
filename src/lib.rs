@@ -1,5 +1,6 @@
 pub mod config;
 pub mod dashboard;
+pub mod moe;
 pub mod pricing;
 pub mod providers;
 pub mod responses;
@@ -32,6 +33,7 @@ pub type ConversationHolds = HashMap<(String, String), ConversationSlot>;
 pub struct Https;
 #[derive(Default)]
 pub struct Runtime {
+    pub in_flight: std::sync::atomic::AtomicUsize,
     pub health: RwLock<HashMap<String, bool>>,
     pub listeners: RwLock<Option<Value>>,
     pub assignment: AsyncMutex<()>,
@@ -47,6 +49,9 @@ pub struct AppState {
 }
 impl AppState {
     pub fn open(config: Config) -> anyhow::Result<Self> {
+        if let Some(policy) = &config.moe_policy {
+            policy.validate(&config)?;
+        }
         let store = Store::open(&config.data_dir.join("knowwhere.db"))?;
         let needs_seed = store.catalog().map_or(true, |catalog| {
             catalog.models.is_empty() || catalog.prices.is_empty()
@@ -112,6 +117,10 @@ pub fn app(state: AppState) -> Router {
         .route("/v1/models", get(routing::models))
         .route("/v1/subscriptions/usage", get(routing::subscriptions))
         .route("/v1/sessions/{session_id}/cost", get(routing::session_cost))
+        .route(
+            "/v1/sessions/{session_id}/attempts",
+            get(routing::session_attempts),
+        )
         .merge(systemone::routes());
     api.merge(dashboard::routes())
         .route("/", get(|| async { axum::response::Redirect::to("/ui") }))
@@ -140,7 +149,7 @@ fn local_authority(authority: &str) -> bool {
         .ok()
         .is_some_and(|a| local_host(a.host()))
 }
-async fn boundary(State(state): State<AppState>, req: Request, next: Next) -> Response {
+async fn boundary(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
     let api = req.uri().path() == "/v1" || req.uri().path().starts_with("/v1/");
     if api {
         let expected = match state.store.gateway_key() {
@@ -236,7 +245,60 @@ async fn boundary(State(state): State<AppState>, req: Request, next: Next) -> Re
             }
         }
     }
+    let mut permit = None;
+    if let Some(policy) = &state.config.moe_policy {
+        let generation = matches!(
+            req.uri().path(),
+            "/v1/messages" | "/v1/responses" | "/v1/messages/count_tokens"
+        );
+        if api && !generation && !req.uri().path().starts_with("/v1/sessions/") {
+            return error(
+                403,
+                "permission_error",
+                "This endpoint is outside the Moe inference policy",
+            );
+        }
+        if generation {
+            if policy.binding(&state.config, req.headers()).is_none() {
+                return error(
+                    403,
+                    "permission_error",
+                    "An approved Moe run and model binding is required",
+                );
+            }
+            if let Some(cap) = policy.max_in_flight {
+                use std::sync::atomic::Ordering;
+                if state
+                    .runtime
+                    .in_flight
+                    .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
+                        (n < cap).then_some(n + 1)
+                    })
+                    .is_err()
+                {
+                    return error(429, "rate_limit_error", "Moe hard concurrency cap reached");
+                }
+                permit = Some(InFlight(state.runtime.clone()));
+            }
+            // Correlation is gateway-owned. It never reaches provider credentials/content.
+            let request_id = uuid::Uuid::new_v4().to_string();
+            req.headers_mut()
+                .insert("x-moe-request-id", request_id.parse().unwrap());
+        }
+    }
     let response = next.run(req).await;
+    let response = if let Some(permit) = permit {
+        use futures_util::StreamExt;
+        let (parts, body) = response.into_parts();
+        let stream = async_stream::stream! {
+            let _permit = permit;
+            let mut bytes = body.into_data_stream();
+            while let Some(chunk) = bytes.next().await { yield chunk; }
+        };
+        Response::from_parts(parts, axum::body::Body::from_stream(stream))
+    } else {
+        response
+    };
     if api
         && response.status().is_client_error()
         && !response
@@ -262,13 +324,25 @@ async fn boundary(State(state): State<AppState>, req: Request, next: Next) -> Re
     }
     response
 }
+struct InFlight(Arc<Runtime>);
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        self.0
+            .in_flight
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
 pub async fn refresh_health(state: &AppState) {
     if let Ok(catalog) = state.store.catalog() {
-        for m in catalog
-            .models
-            .into_iter()
-            .filter(|m| m.enabled && matches!(m.provider.as_str(), "local" | "systemone"))
-        {
+        for m in catalog.models.into_iter().filter(|m| {
+            m.enabled
+                && matches!(m.provider.as_str(), "local" | "systemone")
+                && state
+                    .config
+                    .moe_policy
+                    .as_ref()
+                    .is_none_or(|p| p.route(m).is_some())
+        }) {
             let mut req = state
                 .client
                 .get(format!(
@@ -303,6 +377,13 @@ pub fn start_background(state: AppState) {
         loop {
             let mut delay = interval;
             for provider in ["claude", "codex", "openrouter"] {
+                if state.config.moe_policy.as_ref().is_some_and(|p| {
+                    !p.routes
+                        .iter()
+                        .any(|r| r.provider == provider && r.account == "subscription")
+                }) {
+                    continue;
+                }
                 if !state.store.get_secret(provider).is_ok_and(|v| v.is_some()) {
                     continue;
                 }

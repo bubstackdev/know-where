@@ -180,3 +180,44 @@ CI checks formatting, Clippy, Rust tests, dashboard JavaScript, installation thr
 See [Rust port verification](docs/porting.md) for the scope, test evidence and intentional implementation differences.
 
 Licensed under the [MIT license](LICENSE).
+
+### Protected Moe deployment
+
+The optional `--moe-policy /absolute/protected/policy.json` loads an administrative
+allowlist (not model input) with this shape:
+
+```json
+{"routes":[{"model":"moe-chat","upstream_model":"qualified-upstream-id","provider":"codex","account":"api_key","profile":"tc-enterprise"}],"max_in_flight":2}
+```
+
+Only `claude`/`codex` with `subscription` or `api_key`, and `local` with
+`local_lease`, are permitted. The model catalog must match both provider and exact
+upstream ID. An API key is stored in the encrypted `model:<model-id>` slot; OAuth
+uses the existing owned provider slot. API-key Claude uses native Messages; API-key
+Codex uses OpenAI's native Responses endpoint with an output bound, while OAuth
+retains the subscription transport. API keys never become model content.
+
+Moe mode requires an explicit absolute owned `--data-dir` and loopback binding
+(the default bind address is now `127.0.0.1`). It rejects missing run/model bindings,
+provider/account/profile mismatches and non-generation endpoints outside per-run
+accounting. Callers send `x-moe-run-id` and `x-moe-model`; optional
+`x-moe-account`/`x-moe-profile` must agree with policy. For the session launcher,
+pass `--moe-run-id RUN --moe-model ID` before `run claude|codex`; the child cannot
+override these fixed bindings. Fallback is disabled, including automatic generation
+retries after a 401. Token-count estimates are not exposed as fit guarantees in
+Moe mode. This gateway does not acquire a GPU lease or launch model servers; its
+local consumer must do that through Moe execution before using a local route.
+
+`max_in_flight` is an optional hard cap across sessions in one gateway process;
+zero is invalid. Separate launcher processes have separate caps. A saturated
+request is rejected before upstream dispatch. The slot lasts until the response
+body completes or drops. This is request admission, not a physical memory cap.
+
+`GET /v1/sessions/{run}/attempts` returns every generation attempt, including failures,
+cancellations and unsettled dispatches, with selected and actual model identities,
+account/profile, requested/selected tier and cost provenance. Dispatch intent is
+durable before sending; settlement updates that same row. Unknown usage/cost is
+marked explicitly, and rows left uncertain after restart must be reconciled before
+replay. The existing cost endpoint's count now counts attempts. No prompt, answer,
+credential or upstream failure message is added to the ledger. In ordinary mode,
+fallback still works and retains a separate failure row for each attempt.
