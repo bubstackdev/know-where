@@ -453,7 +453,12 @@ pub async fn run(mut state: AppState, args: &[String]) -> Result<i32> {
     let cmd = &mut harness_command.command;
     // Noninteractive processes can have an independent group for reliable tool
     // cleanup. Interactive harnesses must retain the foreground terminal group.
-    let own_group = !io::stdin().is_terminal();
+    // A supervisor that owns its own process group (for example Moe, which cancels
+    // a run by signalling its whole group) sets KNOWWHERE_INHERIT_PROCESS_GROUP=1 so
+    // the harness and its tools stay inside that group instead of escaping it.
+    let inherit_group =
+        std::env::var_os("KNOWWHERE_INHERIT_PROCESS_GROUP").is_some_and(|v| v == "1");
+    let own_group = !io::stdin().is_terminal() && !inherit_group;
     #[cfg(unix)]
     if own_group {
         use std::os::unix::process::CommandExt;
